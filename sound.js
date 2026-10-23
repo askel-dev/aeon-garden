@@ -38,7 +38,7 @@ let enabled = true, volume = 0.6;
 const amb = {};                                    // ambient layers
 const LOUD = 0.7;                                  // thunder's level against the rest
 const BIRDS = 0.85;                                // birds, 15% under the rest of the meadow
-const state = { phase: 0.3, season: 0, sky: { clear: 1 }, bees: 0, life: 0.3, frogs: 0, trees: 0.5, fire: 0, torch: 0, torchPan: 0, pot: 0, roof: 0 };
+const state = { phase: 0.3, season: 0, sky: { clear: 1 }, bees: 0, life: 0.3, frogs: 0, trees: 0.5, fire: 0, torch: 0, torchPan: 0, pot: 0, roof: 0, lull: 0 };
 const last = {};                                   // per-sound cooldowns
 const picking = { n: 0, at: -1e9, base: 0 };       // the picks in a row (SOUNDS.pick)
 const PICK_CHAIN = 2.5;                            // s: a pick within this of the last climbs on
@@ -378,6 +378,8 @@ const RULES = {
   kindle:  { gap: 0.5,  always: true, lift: 2 },   // the tinder catching and the flame taking,
   stick:   { gap: 0.08, always: true, lift: 2 },   // a stick laid on,
   clack:   { gap: 0.06, always: true, lift: 2 },   // a stone set in the ring,
+  chop:    { gap: 0.08, always: true, lift: 1.8 }, // the knife on the chopping block,
+  swish:   { gap: 0.12, always: true, lift: 1.6 }, // a quick swipe through the air (cooking-lab.html),
   tinder:  { gap: 0.1,  always: true, lift: 2 },   // the tinder tucked in,
   fizzle:  { gap: 0.8,  always: true, lift: 2 },   // and only smoke, or a fire gone out
   camp:    { gap: 4,    always: true, lift: 2 },   // the first fire making camp
@@ -879,6 +881,33 @@ const SOUNDS = {
     partial(o, rand(820, 960), t, 0.07, 0.002, 0.05, 'triangle');
     noise(o, t, 0.04, { from: 1500, to: 900, q: 1.2, peak: 0.1, attack: 0.002 });
   },
+  // A knock of the flint knife on the chopping block (game.js chopTap), by how the thing is got ready (recipes.js PREP's
+  // word): torn greens a leafy rip and a soft pat; sliced, chopped, halved a crisp cut and the knock of the board under it;
+  // crushed a dull thump and a crunch; cracked a sharp crack. The last of a thing knocks a little rounder.
+  chop(t, o, { way = 'chopped', last = false }) {
+    const knock = (f, v) => { partial(o, f * rand(0.94, 1.06), t + 0.03, 0.1 * v, 0.003, 0.09, 'triangle'); partial(o, f * 2.7 * rand(0.95, 1.05), t + 0.03, 0.03 * v, 0.002, 0.04); };
+    if (way === 'torn') {
+      noise(o, t, 0.12, { from: 3200, to: 1800, q: 0.7, peak: 0.07, attack: 0.01 });
+      noise(o, t + 0.05, 0.08, { from: 2400, to: 1400, q: 0.9, peak: 0.05, attack: 0.008 });
+      knock(190, 0.45);
+    } else if (way === 'crushed') {
+      partial(o, rand(110, 130), t, 0.16, 0.004, 0.12, 'triangle');
+      noise(o, t + 0.01, 0.09, { from: 1800, to: 700, q: 1, peak: 0.08, attack: 0.004 });
+    } else if (way === 'cracked') {
+      noise(o, t, 0.035, { from: 4200, to: 2600, q: 1.4, peak: 0.12, attack: 0.001 });
+      knock(240, 0.8);
+    } else {
+      noise(o, t, 0.045, { from: 5200, to: 3400, q: 1.1, peak: 0.07, attack: 0.002 });   // (the blade through it)
+      knock(220, 1);
+    }
+    if (last) partial(o, rand(300, 340), t + 0.09, 0.05, 0.004, 0.12, 'triangle');
+  },
+  // A swipe of the blade through the air: a short band of noise falling, quicker and brighter the faster the swipe (v 0..1).
+  swish(t, o, { v = 1 }) {
+    const len = 0.16 - v * 0.06;
+    noise(o, t, len, { from: 5200 + v * 2400, to: 1800, q: 1.1, peak: 0.04 + v * 0.04, attack: len * 0.35 });
+    noise(o, t, len * 0.8, { from: 9000, to: 4200, q: 2.2, peak: 0.015 + v * 0.02, attack: len * 0.3 });
+  },
   // The tinder tucked in: a dry rustle.
   tinder(t, o) { noise(o, t, 0.18, { from: 2400, to: 3600, q: 0.9, peak: 0.08, attack: 0.05 }); },
   // Only smoke, or a fire gone out: a soft hiss, falling away.
@@ -962,13 +991,35 @@ const SOUNDS = {
   // a nibble at the bait, a tick and a plip (nibble); the bite, the float pulled under with a deep gloop and two bright notes
   // (bite); the reel's wooden click, a few to a second while it's wound in (click, v: how hard); the line creaking taut as
   // the fish pulls (creak, v); landed, a slap on the bank, the fish flopping and a happy run up (land); and got away, a
-  // splash and two soft notes falling (away).
+  // splash and two soft notes falling (away); the rod worn out, a dry crack of wood, the line twanging slack, a little creak
+  // and two notes falling low (snap).
   angle(t, o0, { what = '', v = 1 }) {
     const o = ac.createBiquadFilter(); o.type = 'lowpass'; o.frequency.value = 5200; o.Q.value = 0.5; o.connect(o0);
-    if (what === 'cast') {
-      whoosh(o, t, 0.16, 1.5);
-      noise(o, t + 0.12, 0.42, { from: 1800, to: 4200, q: 7, peak: 0.05, attack: 0.04 });   // the line paying out, zinging
-      noise(o, t + 0.12, 0.42, { from: 900, to: 2100, q: 5, peak: 0.03, attack: 0.04 });
+    if (what === 'cast') {                                 // (v: how far it was charged; a tap's cast is 0.6)
+      const k = 0.55 + 0.45 * v, len = 0.3 + 0.24 * v;
+      whoosh(o, t, 0.12 + 0.06 * v, 1.1 + 0.7 * v);
+      noise(o, t + 0.1, len, { from: 1600 + 400 * v, to: 3400 + 1600 * v, q: 7, peak: 0.05 * k, attack: 0.04 });   // the line paying out, zinging
+      noise(o, t + 0.1, len, { from: 900, to: 1800 + 600 * v, q: 5, peak: 0.03 * k, attack: 0.04 });
+    } else if (what === 'charge') {                        // the cast winding up (v, 0 to 1): the reel's ratchet clicking back, higher and
+      const f = 700 + 900 * v;                             // harder as it's drawn, and the rod creaking as it bends
+      const osc = ac.createOscillator(), g = ac.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(f * rand(0.97, 1.03), t); osc.frequency.exponentialRampToValueAtTime(f * 0.55, t + 0.022);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.035 + 0.035 * v, t + 0.002); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.035);
+      osc.connect(g).connect(o); osc.start(t); osc.stop(t + 0.05);
+      noise(o, t, 0.018, { from: 3600 + 1400 * v, to: 2600, q: 2.2, peak: 0.02 + 0.02 * v, attack: 0.001 });
+      noise(o, t + 0.01, 0.1, { from: 280 + 420 * v, to: 340 + 520 * v, q: 10, peak: 0.008 + 0.03 * v * v, attack: 0.04 });   // (the bend)
+    } else if (what === 'full') {                          // drawn back as far as it goes: the line pulled taut, a twang, and two bright notes
+      const osc = ac.createOscillator(), g = ac.createGain(), f = note(4, 0);
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(f * 1.04, t); osc.frequency.exponentialRampToValueAtTime(f, t + 0.06);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.06, t + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
+      osc.connect(g).connect(o); osc.start(t); osc.stop(t + 0.5);
+      noise(o, t, 0.22, { from: 520, to: 880, q: 9, peak: 0.05, attack: 0.05 });
+      kalimba(o, note(4, 1), t + 0.03, 0.26); kalimba(o, note(7, 1), t + 0.1, 0.3);
+    } else if (what === 'strain') {                        // held at full: the rod quivering, a low creak now and then
+      noise(o, t, 0.28, { from: rand(420, 480), to: rand(380, 440), q: 11, peak: 0.03, attack: 0.1 });
+      noise(o, t + 0.06, 0.16, { from: 1100, to: 1300, q: 7, peak: 0.01, attack: 0.06 });
     } else if (what === 'float') {
       bloop(o, t, rand(480, 560), 0.045, 0.07);
       noise(o, t, 0.12, { from: 3000, to: 900, q: 0.7, peak: 0.05, type: 'lowpass', attack: 0.003 });
@@ -1008,6 +1059,16 @@ const SOUNDS = {
       noise(o, t, 0.36, { from: 1800, to: 400, q: 0.7, peak: 0.12, type: 'lowpass', attack: 0.006 });
       [0.1, 0.2].forEach(d => waterDrop(o, t + d, Math.floor(rand(4, 7)), 0.03));
       marimba(o, note(2, 0), t + 0.18, 0.4); marimba(o, note(0, 0), t + 0.38, 0.36);
+    } else if (what === 'snap') {
+      noise(o, t, 0.05, { from: 2600, to: 1200, q: 1.4, peak: 0.16, attack: 0.002 });   // the crack of the stick
+      partial(o, rand(820, 900), t, 0.09, 0.002, 0.05, 'triangle'); partial(o, rand(1700, 1900), t + 0.012, 0.04, 0.002, 0.03);
+      const osc = ac.createOscillator(), g = ac.createGain();   // the line twanging slack
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(note(4, 0), t + 0.03); osc.frequency.exponentialRampToValueAtTime(note(4, 0) * 0.6, t + 0.35);
+      g.gain.setValueAtTime(0.0001, t + 0.03); g.gain.exponentialRampToValueAtTime(0.05, t + 0.035); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
+      osc.connect(g).connect(o); osc.start(t + 0.03); osc.stop(t + 0.45);
+      noise(o, t + 0.12, 0.22, { from: rand(380, 440), to: rand(300, 340), q: 10, peak: 0.035, attack: 0.08 });   // and a little creak
+      marimba(o, note(4, 0), t + 0.32, 0.3); marimba(o, note(1, 0), t + 0.52, 0.34);
     }
   },
   // The spoon going round the pot: the water swished round (a band of noise swelling and moving), now and then the wood
@@ -1412,6 +1473,7 @@ function buildAmbience() {
   amb.roof = loopNoise('bandpass', 850, 1.1);             // rain on the lean-to's thatch over its head (state.roof): a soft close patter
   amb.under = 0;                                          // (how far under it, eased: the rain outside muffles as it goes in)
   amb.hum = hiveHum();
+  amb.lap = loopNoise('lowpass', 520, 0.8);              // the water lapping at the bank by you, fishing (state.lull)
   amb.calm = 0.5; amb.blow = null; amb.gust = 0; amb.swell = 0.5; amb.tube = 2;
 }
 
@@ -1420,20 +1482,21 @@ function mix() {
   const p = state.phase, s = state.season;
   const sky = k => state.sky[k] || 0;
   const dayness = p < 0.05 ? p / 0.05 : p > 0.72 ? 0 : p > 0.64 ? (0.72 - p) / 0.08 : 1;
-  const wet = Math.min(1, sky('rain') + sky('storm'));
+  const wet = Math.min(1, sky('rain') + sky('storm')), L = state.lull;   // (L: fishing, the wait settling, the meadow hushed round you)
   const grey = Math.max(0, 1 - 0.8 * wet - 0.6 * sky('fog') - 0.3 * sky('cloudy') - 0.5 * sky('snow'));
   return {
     day: dayness,
     birds: dayness * [1, 0.7, 0.4, 0.15][s] * (p < 0.2 ? 1.6 : 1) * grey,   // dawn chorus
     crickets: (1 - dayness) * [0.5, 1, 0.6, 0][s] * (1 - wet) * (1 - sky('snow')),
-    wind: [0.5, 0.35, 0.7, 0.85][s] * (1 + 0.3 * sky('cloudy') + 0.8 * sky('storm') - 0.5 * sky('fog') - 0.4 * sky('heat')),
+wind: (1 - 0.35 * L) * [0.5, 0.35, 0.7, 0.85][s] * (1 + 0.3 * sky('cloudy') + 0.8 * sky('storm') - 0.5 * sky('fog') - 0.4 * sky('heat')),
     windHi: [700, 600, 900, 1300][s],
     rain: wet, storm: sky('storm'),
     cicadas: dayness * sky('heat'),
     snow: Math.max(sky('snow'), s === 3 ? 0.3 * dayness : 0),
-    hush: Math.max(sky('fog'), 0.7 * sky('snow')),
-    bees: Math.min(1, state.bees / 12),
-    chimes: Math.min(1, state.life) ** 1.5 * (0.5 + 0.5 * dayness),    // a busy meadow, a busy chime
+    hush: Math.max(sky('fog'), 0.7 * sky('snow'), 0.3 * L),
+    bees: (1 - 0.6 * L) * Math.min(1, state.bees / 12),
+    chimes: (1 - 0.7 * L) * Math.min(1, state.life) ** 1.5 * (0.5 + 0.5 * dayness),
+    lull: L,    // a busy meadow, a busy chime
     leaves: Math.min(1, state.trees) * [0.6, 0.75, 1, 0.12][s] * (1 - 0.8 * sky('snow')),   // fresh, full, dry, bare
     leafHi: [4000, 3200, 5000, 3800][s],          // summer's full crowns are a soft shh, autumn's dry ones crisp
   };
@@ -1463,6 +1526,12 @@ function tickAmbience() {
   amb.fire.g.gain.setTargetAtTime(0.06 * state.fire, now, 0.6);
   amb.pot.g.gain.setTargetAtTime(0.05 * state.pot, now, 0.5);
   hush.frequency.setTargetAtTime(12000 - 9500 * m.hush, now, 2);
+  // Fishing, the wait settling (state.lull): the water laps close, slow swells of it; the music and the meadow's own sounds
+  // step back a little.
+  const lap = 0.045 * m.lull * (0.65 + 0.35 * Math.sin(now * 0.9) * Math.sin(now * 0.37));
+  amb.lap.g.gain.setTargetAtTime(lap, now, 0.8); gateTick(amb.lap.gate, lap, 0.2);
+  musicBus.gain.setTargetAtTime(0.45 * (1 - 0.35 * m.lull), now, 3);
+  fxBus.gain.setTargetAtTime(0.9 * (1 - 0.3 * m.lull), now, 3);
 
   // Scattered one-shots, each rolled a few times a second.
   const dt = 0.2;
@@ -1479,6 +1548,7 @@ function tickAmbience() {
   if (Math.random() < state.torch * 3 * dt) crackle(now + rand(0, 0.2), 0.55 * state.torch, state.torchPan);   // a torch: the same snaps, quieter, from where it stands
   if (state.pot > 0) for (let i = 0, n = Math.round(state.pot * state.pot * 7 * Math.random() + (Math.random() < state.pot * 2.5 * dt ? 1 : 0)); i < n; i++)
     bubble(out(rand(-0.15, 0.15), 0.2, 0.9), now + rand(0, 0.2), state.pot);                // the pot bubbling: now and then a bubble, a boil a stream of them
+  if (Math.random() < m.lull * 0.5 * dt) bubble(out(rand(-0.4, 0.4), 0.35, 0.4), now + rand(0, 0.2), 0.4);   // (fishing: now and then a plip by the bank)
   if (Math.random() < m.cicadas * 0.12 * dt) cicada(now);
   if (Math.random() < (0.08 + 1.4 * m.chimes) * (0.5 + amb.gust) * dt) chime(now + rand(0, 0.2));
   musicTick(now, m);

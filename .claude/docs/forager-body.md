@@ -29,7 +29,8 @@ sit under it. On an upright phone it's just the degrees, and while playing toget
 Practice earned floats up over its head as in Project Zomboid (`xpFrame`, `drawXpFloats`, 2026-10-17): "+4 Gathering" in the
 skill's ink (`SKILL_INK`, lightened) as plain words with a faint dark edge, no pill, painted once (`xpFloatOf`), gathered till it stops
 gaining for `XP_QUIET_MS` (a pick, a dish) or `XP_MOST`; stamina only now and then, every `XP_EVERY` seconds of sprinting gathered over
-sprints. Shown as practice times `XP_SHOWN`, a newer one pushing the older up. A new skill shows at 1x.
+sprints. Shown as practice times `XP_SHOWN`, a newer one pushing the older up. A new skill shows at 1x. A catch's pill
+(`headPop`, fishing.md) shares the stack, each float with its own `ms` and alpha `a`.
 Collapsed it tips over (`FALL_MS`) with its eyes shut (pose 7), the screen goes dark
 (`#veil`, `DARK_AFTER`), and `bodyFrame` runs the sim `SKIP_MS` a frame till it wakes at home (`bodyWoke`: the camera there at
 once, a toast, three soft notes: sound.js `wake`). Out of breath (`f.winded`) a press, Shift or a held run only walks it.

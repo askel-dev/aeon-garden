@@ -81,6 +81,14 @@ meadow's own painting of it (`ITEM_ART`), which a new ingredient keeps till item
 recipes.js emoji. Each is clipped to its own square in the sheet (`ITEM_FILL` scales one up). A tap on a slot opens nothing, but a full one can be dragged (`setupSatchel`): its painting follows the pointer (above a finger), let go on another slot it goes there (sim.js `moveSlot`: onto a stack of its kind, or the two swap), let go off the satchel it is dropped (sim.js `dropSlot`): it flies down to just in front of the forager and lands with a little bounce (`dropLand`), and lies there looking like something to pick (`drawDropped`, `dropPx`, `dropArt`: a find in the meadow's own painting at its size there, a little smaller, `DROP_FIND`; anything else in its satchel painting at about that size, `DROP_PX`), with the same warm ring in reach as a find (`drawNear`, `nearRing`) to be picked up again like a find (`'dropped'` in `gatherAt`, `gatherSpot`), fading over its last `DROP_FADE` till it's gone. On a touch screen each slot is 44 px or more, and upright the satchel steps aside while the
 inspector's sheet is up.
 
+The hands (2026-10-22): as in Minecraft's hotbar, one slot is always the one in its hands (`ui.held`, ringed in brass: `.sel`,
+not while cooking), picked by a tap on it (a full one still opens its Eat as before; an empty one is empty hands) or its number
+key 1 to 8 (`holdSlot`), and kept on the device (`aeon-garden-held`). Dragged, the held thing stays held in its new slot. What's
+in it is what it holds: the rod fishes (`holdsRod`, see `fishing.md`); anything else (`heldItem`) is held out in both mittens
+as a dish is, smaller (`itemLookOf`, `ITEM_HELD`: the carry poses, so it walks the carry's walk), and does nothing yet. Friends
+see it too: `pos` sends the slot's thing (`hi`), and a friend's rod is held out standing and over its shoulder walking, as ours.
+On a phone the satchel hides its empty slots but not the one in its hands, so an empty one picked still shows its ring.
+
 ## sim.js
 
 Gathering (`whatThere`, `gather`) takes from the sim for real, with no random numbers: a clump of mushrooms picked is gone

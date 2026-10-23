@@ -1,7 +1,7 @@
 /* Nobody's Meadow — the offline shell.
  *
  * The meadow should open with the door shut: from the home screen on a plane, or in a dead spot, with no signal at
- * all. This keeps the page and everything it needs to run — the eleven scripts, the painters the workers pull in, the
+ * all. This keeps the page and everything it needs to run — the scripts, the painters the workers pull in, the
  * icons and the fonts — on the device, and serves it all from there. A meadow already visited then opens again with no
  * network.
  *
@@ -19,17 +19,17 @@
  * index.html registers this ('serviceWorker' in navigator). Its fetch handler is also what Android Chrome wants
  * before it offers to install the meadow: without it there is only the manual "Add to Home screen". */
 
-const VERSION = 6;
+const VERSION = 7;
 const CACHE = `meadow-${VERSION}`;
 
-// The page, everything it loads to run (the eleven scripts in index.html: sim, fur, dishes, items, sound, ground,
-// recipes, net, friends, stone, game), the painters the workers pull in (fur.js is above; trees.js is not, and
+// The page, everything it loads to run (the thirteen scripts in index.html: sim, fur, dishes, items, sound, ground,
+// recipes, board, net, friends, stone, updates, game), the painters the workers pull in (fur.js is above; trees.js is not, and
 // fur-worker.js / tree-worker.js are loaded by game.js), the icons the home screen and the manifest ask for, the
 // fonts index.html lays out, and the manifest itself. Paths are relative to this file, at the meadow's root.
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest',
   'sim.js', 'fur.js', 'dishes.js', 'items.js', 'sound.js', 'ground.js',
-  'recipes.js', 'net.js', 'friends.js', 'stone.js', 'game.js',
+  'recipes.js', 'board.js', 'net.js', 'friends.js', 'stone.js', 'updates.js', 'game.js',
   'trees.js', 'fur-worker.js', 'tree-worker.js',
   'assets/favicon.ico', 'assets/favicon.svg', 'assets/icon-192.png',
   'assets/apple-touch-icon.png', 'assets/logo.png',

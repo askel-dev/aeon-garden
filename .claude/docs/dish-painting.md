@@ -139,3 +139,7 @@ draw it cooked.
 8. Don't commit unless asked: other sessions work in this folder. Leave it for Axel to look at in the dish lab.
 
 The game picks a new painting up on its own (game.js reads `Dishes.NAMES`), as do `recipes.html` and the recipe book.
+
+Added 2026-10-23 with the water food (PLAN.md stage 14): `barkCup(g, inTea)` (rim at `BARK_CUP`), the birch-bark cup, shared by
+Rosehip tea and Mint tea with honey; `musselAt` (an open mussel), `crayfishAt` (a boiled one, from above), `wmintSprigAt` and
+`wmintLeafPath` (water mint), and `honeyEelAt` (a glaze over `eelPieceAt`'s rounds).

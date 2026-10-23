@@ -35,6 +35,8 @@ const VESSELS = {
 // stack: how many one satchel slot holds (default 10, sim.js STACK).
 // keep: how many one slot of a set-down store holds, the camp's basket and the keeps to come (default: its stack).
 // where: when and where to look for it, for its page in the book (shown before it's found, as the hint).
+// uses, mend: a tool's (tagged 'tool'): how many uses it has new (sim.js wear: what a thing costs is the tool's own code's),
+// and what puts it back to new at the make strip, { word: how many } as a build's needs. A tool is one to a slot.
 // dries: what it turns into hung on the camp's drying rack a day or two in dry weather (sim.js rackTick); the dried one
 // has dried: true (it isn't a kind of food the basket wants one of).
 const INGREDIENTS = {
@@ -63,6 +65,12 @@ const INGREDIENTS = {
   perch:       { name: 'Perch',               tags: ['fish'],           fill: 2,   dries: 'driedfish', icon: '🐠', raw: false, text: 'Striped green and gold, with a spiny fin up its back.', where: 'Deep still water, spring to autumn.' },
   trout:       { name: 'Brown trout',         tags: ['fish'],           fill: 2.5, dries: 'driedfish', icon: '🐡', raw: false, text: 'Speckled red and black, and strong in the current. The prize.', where: 'Where the water runs, in spring and summer, best at dawn.' },
   eel:         { name: 'Eel',                 tags: ['fish'],           fill: 3,   icon: '🐍', raw: false, text: 'Long, dark and slippery, and it pulls like a rope.', where: 'Deep still water, on summer nights.' },
+  // Water food: not fish, but on the hook now and then for a fair angler (HAUL below, PLAN.md stage 14).
+  mussel:      { name: 'Freshwater mussels',  stack: 20, tags: ['shellfish'], fill: 1,   icon: '🦪', raw: false, text: 'Blue-black shells off the muddy bottom, shut tight. They open in the heat.', where: 'On the hook from deep still water, spring to autumn, for a fair angler (fishing 3).' },
+  crayfish:    { name: 'Crayfish',            tags: ['shellfish'],      fill: 1.5, icon: '🦞', raw: false, text: 'A little lobster of the brook, all claws and temper. It goes red in the pot.', where: 'On the hook where the water runs, on summer evenings and nights (fishing 3).' },
+  watermint:   { name: 'Water mint',          keep: 20, tags: ['greens'],         fill: 0.5, icon: '🌿', text: 'A wet green tangle off the hook that smells sweetly of mint.', where: 'Caught on the hook in spring and summer, where it grows along the bank (fishing 3).' },
+  // A keepsake from the water (TREASURES below): not food.
+  pearl:       { name: 'Pearl',               stack: 5, tags: ['keepsake'],      fill: 0,   icon: '⚪', raw: false, text: 'A little moon from inside a mussel. Something to keep, not to eat.', where: 'Once in a long while inside a mussel, for a good angler (fishing 5).' },
   // Dried on the camp's rack (`dries` above): lighter, so a slot holds more, and sweeter or deeper than fresh.
   driedshroom: { name: 'Dried mushrooms',     stack: 30, tags: ['mushroom'],       fill: 1,   icon: '🍄', dried: true, text: 'Shrivelled dark and leathery, and they smell twice as much of mushroom as they did.', where: 'Hang ceps, chanterelles, field or oyster mushrooms on the drying rack, in dry weather.' },
   applering:   { name: 'Dried apple rings',   stack: 30, tags: ['fruit'],          fill: 1,   icon: '🍎', dried: true, text: 'Chewy and sweet, curling at the edges like old leather.', where: 'Hang apples on the drying rack, in dry weather.' },
@@ -71,11 +79,13 @@ const INGREDIENTS = {
   // What lies on the ground for a fire: not food. 'tinder' catches the spark, 'fuel' keeps it going.
   stick:       { name: 'Sticks',              stack: 20, tags: ['fuel'],           fill: 0,   icon: '🪵', raw: false, text: 'Something to keep a fire going.', where: 'Under the trees, all year. More come down in a storm.' },
   pebble:      { name: 'Pebbles',             stack: 20, tags: ['stone'],          fill: 0,   icon: '🪨', raw: false, text: 'Smooth stones, to ring a fire.', where: 'On the shore, at the fords and round the rocks.' },
+  slab:        { name: 'Flat stone',          stack: 4, tags: ['stone'],           fill: 0,   icon: '🪨', raw: false, text: 'A slab of river stone, flat and broad as two hands spread. Heavy.', where: 'Now and then on the shore, at the fords and round the rocks.' },
   drygrass:    { name: 'Dry grass',           stack: 20, tags: ['tinder'],         fill: 0,   icon: '🌾', raw: false, text: 'Dry stems from the long grass, to catch a spark.', where: 'In the long grass out in the open, most in summer and autumn.' },
   clay:        { name: 'Clay',                tags: ['earth'],          fill: 0,   icon: '🟤', raw: false, text: 'Cool, heavy and red-grey. It holds the shape of your thumb.', where: 'On the muddy banks, right by the water.' },
   birchbark:   { name: 'Birch bark',          stack: 20, tags: ['tinder'],         fill: 0,   icon: '📜', raw: false, text: 'Papery curls that catch even when damp.', where: 'Under the birches, and a little way out from them.' },
-  // Made, not found (made: true keeps it out of the book's Finds): BUILDS.rope twists it at the Craft strip.
+  // Made, not found (made: true keeps it out of the book's Finds): BUILDS.rope twists it at the Craft strip, BUILDS.rod lashes it.
   rope:        { name: 'Rope',                stack: 5, tags: ['cord'],           fill: 0,   icon: '🪢', raw: false, made: true, text: 'Dry grass twisted into a rope. Tie it to a friend (L) and lead them about.', where: 'Twisted from dry grass at the Craft strip.' },
+  rod:         { name: 'Fishing rod',         stack: 1, tags: ['tool'],           fill: 0,   uses: 60, mend: { rope: 1 },   icon: '🎣', raw: false, made: true, text: 'Two sticks lashed end to end, with a line and a thorn hook. Tap the water from the bank to cast.', where: 'Made from sticks and a rope at the Craft strip.' },
 };
 
 // The dishes. Only name and needs are a must. The rest, when left out:
@@ -93,6 +103,8 @@ const INGREDIENTS = {
 //   eats            how it's eaten (game.js EAT_WAYS): 'spoon' (from the bowl), 'hand' (bitten), 'skewer' (pulled off the
 //                   stick), 'sip' (the bowl to its lips). Left out: by the vessel (EATS_BY_VESSEL)
 //   crisp: false    true: it crunches as it's eaten, and drops crumbs
+//   bottle          1, 2, 3...: a secret dish, taught only by a bottle fished out of the water (TREASURES); till then the
+//                   things in it cook into whatever else they'd make, or a mess (cook)
 //   text            a line for its card
 const RECIPES = [
   {
@@ -376,20 +388,79 @@ const RECIPES = [
     needs: ['driedfish', 'hazelnut'],
     text: 'Cold trail food: chewy, salty and sweet. A pocketful lasts a long walk.',
   },
+  // Water food (PLAN.md stage 14): what comes up on the hook that isn't a fish.
+  {
+    name: 'Mussels with wild garlic',
+    vessel: 'pan',
+    time: 35,
+    icon: '🦪',
+    needs: ['mussel', 'mussel', 'garlic'],
+    warm: true,
+    text: 'Tipped onto the hot griddle till the shells spring open, the garlic wilting into their juice.',
+  },
+  {
+    name: 'Crayfish boil',
+    vessel: 'pot',
+    time: 70,
+    icon: '🦞',
+    needs: ['crayfish', 'crayfish', 'watermint', 'greens'],
+    warm: true,
+    text: 'Into the rolling pot they go, and out they come bright red, with mint and greens to pick through.',
+  },
+  {
+    name: 'Trout with water mint',
+    vessel: 'stick',
+    time: 40,
+    icon: '🍢',
+    needs: ['trout', 'watermint'],
+    warm: true,
+    text: 'A trout stuffed with mint from the same brook and turned over the coals.',
+  },
+  // From a bottle fished out of the water (TREASURES): found no other way, whatever goes in the pot (cook: bottle).
+  {
+    name: 'Honeyed eel',
+    vessel: 'stick',
+    time: 45,
+    icon: '🍢',
+    needs: ['eel', 'honey'],
+    warm: true,
+    bottle: 1,
+    text: 'An old fisher\'s trick, written small on a scrap of birch bark: eel glazed with honey till it\'s sticky and black at the edges.',
+  },
+  {
+    name: 'Fisher\'s mussel broth',
+    vessel: 'pot',
+    time: 80,
+    icon: '🥣',
+    needs: ['mussel', 'mussel', 'mushroom', 'nettle'],
+    warm: true,
+    bottle: 2,
+    text: 'From a bottle\'s note: mussels, a mushroom and nettle tops, simmered into a broth that tastes of the river.',
+  },
+  {
+    name: 'Mint tea with honey',
+    vessel: 'pot',
+    time: 30,
+    icon: '🍵',
+    eats: 'sip',
+    needs: ['watermint', 'watermint', 'honey'],
+    warm: true,
+    bottle: 3,
+    text: 'Water mint steeped till the pot smells of summer, sweetened with honey. The note said: for a cold evening by the water.',
+  },
 ];
 
 // What the forager builds, from the make button by the satchel (game.js renderBuild), and what each takes out of the
 // satchel. In `needs`, each word is an ingredient or a tag (any ingredient that has it: 'tinder' takes dry grass or birch
 // bark), with how many. To add a build, copy a block; the game only knows how to build the ones it paints and places (the
-// campfire, the basket, the torch and the seat log, the drying rack and the lean-to at camp), or the ones that make a thing for
+// campfire, the basket, the torch and the seat log, the drying rack, the lean-to and the cutting log or stone at camp), or the ones that make a thing for
 // the satchel (`makes`).
 //   name            what it's called
 //   needs           what it takes, { word: how many }
 //   where           where it may go: 'anywhere' (left out), or 'camp' (inside the camp's ring)
 //   after           when it's on offer: left out at once, 'camp' once there's a camp, 'together' while friends are
 //                   here, or a Cooking level (2)
-//   makes           an ingredient's id: made at once into the satchel, nothing placed (the rope); or a thing the forager
-//                   carries (CARRIED: the rod), made once and kept with it, never in a slot
+//   makes           an ingredient's id: made at once into the satchel, nothing placed (the rope, the rod)
 //   text            a line for when you look at it
 const BUILDS = {
   campfire: {
@@ -413,9 +484,7 @@ const BUILDS = {
   seat: {
     name: 'Seat log',
     needs: { stick: 5 },
-    where: 'camp',
-    after: 'camp',
-    text: 'A felled log rolled up by the fire onto two sawn rounds, to sit on.',
+    text: 'A felled log rolled onto two sawn rounds, to sit on, wherever you like and as many as you like.',
   },
   rope: {
     name: 'Rope',
@@ -442,12 +511,46 @@ const BUILDS = {
     after: 'camp',
     text: 'A sloping roof of poles, thatch and birch bark, with a bed of dry grass under it, out of the rain.',
   },
+  // What things are cut on at the fire (game.js, the board at the fire): one of the two, at camp close by the fire. Until there
+  // are logs and an axe, the log is split from sticks.
+  cutlog: {
+    name: 'Cutting log',
+    needs: { stick: 6 },
+    where: 'camp',
+    after: 'camp',
+    text: 'A log split down its length with the knife and a stick, laid flat face up on two stones by the fire, to cut things on.',
+  },
+  cutstone: {
+    name: 'Cutting stone',
+    needs: { slab: 1 },
+    where: 'camp',
+    after: 'camp',
+    text: 'A flat slab carried up from the river and laid by the fire ring, to cut things on.',
+  },
+  block: {
+    name: 'Chopping block',
+    needs: { stick: 4, pebble: 1 },
+    where: 'camp',
+    after: 'camp',
+    gone: true,                          // (no longer made: things are cut on the cutting log or stone at the fire now, game.js; one made is a log)
+    text: 'A sawn round stood on end with a board on it and a flint knife, to get things ready for the pot.',
+  },
 };
 
-// What the forager makes and carries (a build's `makes`): one each, kept with it for good, never in a satchel slot (sim.js f.rod).
-const CARRIED = {
-  rod: { name: 'Fishing rod', icon: '🎣', text: 'Tap the water from the bank to cast.' },
+// How a thing is got ready on the chopping block (game.js chopping, PLAN.md stage 12): by its own id first (garlic is
+// crushed, nettles chopped, not torn like the other greens), else by the first of its tags that has a way here. The word
+// for it done, and the taps it takes. A thing with no way (a fish, honey) goes in the pot whole.
+const PREP = {
+  garlic: { word: 'crushed', cuts: 2 },
+  nettle: { word: 'chopped', cuts: 4 },
+  greens: { word: 'torn', cuts: 3 },
+  mushroom: { word: 'sliced', cuts: 4 },
+  fruit: { word: 'halved', cuts: 2 },
+  nut: { word: 'cracked', cuts: 3 },
+  flower: { word: 'picked over', cuts: 2 },
 };
+const prepOf = id => PREP[id] || (INGREDIENTS[id] ? INGREDIENTS[id].tags.map(t => PREP[t]).find(Boolean) : null) || null;
+
 
 // The fish that bite on the rod (game.js fishing). They aren't kinds in the sim: sim.js keeps one w.fish, how many are in
 // each tile of water, and which bites is picked at the bite, by where the float lies and when (game.js fishKind). Each is
@@ -476,6 +579,55 @@ const FISH = {
   eel:   { water: 'still', deep: true, seasons: [1], night: true, odds: 6, prize: false, dart: 0.25, pull: 1.5, idle: [0.5, 1.1], low: 0.45, sink: 1.35, wriggle: 0.5, run: 0.6, grams: [250, 2600] },
 };
 const FISH_KEYS = ['water', 'deep', 'seasons', 'night', 'dawn', 'odds', 'prize', 'dart', 'pull', 'idle', 'low', 'sink', 'wriggle', 'run', 'grams'];
+
+// What comes up on the hook that isn't a fish (PLAN.md stage 14, the haul). At each bite these are rolled first, each by its
+// own chance (game.js fishKind), and only if none comes up is it a fish. It takes nothing from the sim's fish. Each is an
+// ingredient above. To add one, copy a block.
+//   from            the fishing level it first comes up at (sim.js SKILLS fishing)
+//   odds            its chance at a bite (0 to 1) where it can come up
+//   water           'still', 'current' or 'any', as FISH
+//   current         how many times likelier where the water runs (things wash down; left out: 1)
+//   trees           and with a tree standing near the float (bark and twigs fall in; left out: 1)
+//   deep            true: only over deep water
+//   dark            how many times likelier at dusk and at night (left out: 1)
+//   seasons         as FISH
+//   n               how many come up at once, [least, most]
+//   drag            how it fights in the bar (game.js HAUL_FIGHT): 'dead', a dead weight that sinks slowly and evenly;
+//                   'scrabble', small quick wriggles and no runs
+//   prize           true: a good angler gets it more often, as FISH's prize (game.js PRIZE_MORE)
+const HAUL = {
+  stick:     { from: 0, odds: 0.015, water: 'any', current: 1.6, trees: 1.5, seasons: [0, 1, 2, 3], n: [1, 2], drag: 'dead' },
+  drygrass:  { from: 0, odds: 0.012, water: 'any', current: 1.3, seasons: [0, 1, 2, 3], n: [1, 3], drag: 'dead' },
+  clay:      { from: 0, odds: 0.01, water: 'still', seasons: [0, 1, 2, 3], n: [1, 2], drag: 'dead' },
+  pebble:    { from: 0, odds: 0.012, water: 'any', current: 1.6, seasons: [0, 1, 2, 3], n: [1, 3], drag: 'dead' },
+  birchbark: { from: 0, odds: 0.008, water: 'any', current: 1.3, trees: 3, seasons: [0, 1, 2, 3], n: [1, 2], drag: 'dead' },
+  // Water food, from level 3 (about 8% of bites where each can come up).
+  mussel:    { from: 3, odds: 0.035, water: 'still', deep: true, seasons: [0, 1, 2], n: [2, 4], drag: 'dead', prize: true },
+  crayfish:  { from: 3, odds: 0.02, water: 'current', dark: 4, seasons: [1], n: [1, 2], drag: 'scrabble', prize: true },
+  watermint: { from: 3, odds: 0.035, water: 'any', seasons: [0, 1], n: [1, 3], drag: 'dead', prize: true },
+};
+const HAUL_KEYS = ['from', 'odds', 'water', 'deep', 'dark', 'current', 'trees', 'seasons', 'n', 'drag', 'prize'], HAUL_DRAGS = ['dead', 'scrabble'];
+
+// The treasures (PLAN.md stage 14): from fishing level 5 now and then (game.js TREASURE_*), each once a meadow (sim.js
+// w.hauled), none twice. They come up heavy (game.js HAUL_FIGHT heavy), and one lost in the bar can bite again. The book's
+// Finds has a page for each ("From the water"), the ones not found a faint outline and no name. To add one, copy a block.
+//   name            what it's called
+//   kind            what it does landed (game.js landTreasure): 'bottle' teaches its dish (a RECIPES block with bottle:
+//                   its number), 'pot' leaves a copper pot on the bank, 'hat' and 'cloak' are for the wardrobe (fur.js
+//                   FORAGER_HATS, FORAGER_CLOAKS find: this id), 'pearl' goes in the satchel as the ingredient
+//   dish            a bottle's: the dish's name
+//   rolled          false: never rolled on its own (the pearl comes in a mussel haul)
+//   text            a line said as it lands, and on its page
+const TREASURES = {
+  bottle1:   { name: 'A bottle with a note', kind: 'bottle', dish: 'Honeyed eel', text: 'Corked tight, a curl of birch bark inside, written small.' },
+  bottle2:   { name: 'A green bottle', kind: 'bottle', dish: 'Fisher\'s mussel broth', text: 'Thick old glass gone cloudy, a note rolled up inside.' },
+  bottle3:   { name: 'A little blue bottle', kind: 'bottle', dish: 'Mint tea with honey', text: 'No bigger than a thumb, and a recipe folded in it.' },
+  copperpot: { name: 'Sunken copper pot', kind: 'pot', text: 'Green with age and dented, but sound. Copper heats quick.' },
+  cap:       { name: 'Old fisher\'s cap', kind: 'hat', text: 'A felt cap gone soft with years of river weather. It fits.' },
+  oilskin:   { name: 'Oilskin cloak', kind: 'cloak', text: 'Waxed yellow and stiff with the cold, a fisher\'s cloak.' },
+  pearl:     { name: 'Pearl', kind: 'pearl', rolled: false, text: 'A little moon from inside a mussel.' },
+};
+const TREASURE_KEYS = ['name', 'kind', 'dish', 'rolled', 'text'], TREASURE_KINDS = ['bottle', 'pot', 'hat', 'cloak', 'pearl'];
 
 // The camp's cosy (PLAN.md stage 8): every point is a deed, earned once and never lost. `w.camp.deeds` keeps their ids in the
 // order they were earned and `w.camp.cosy` is their points summed (sim.js countCosy). `from` is the camp level at which a deed
@@ -519,6 +671,7 @@ const DEEDS = {
 
   'basket-half': { name: 'Filled half the basket', points: 2, from: 1 },
   'basket-all': { name: 'One of every kind of food in it', points: 4, from: 1 },
+  pearl: { name: 'Found a pearl', points: 2, from: 1 },
 
   'friend-fire': { name: 'A friend sat by your fire', points: 2, from: 1, friend: true },
   'friend-dish': { name: 'A friend ate your dish', points: 2, from: 1, friend: true },
@@ -589,8 +742,8 @@ const TEACHERS = ['hedgehog', 'heron', 'kingfisher', 'skylark', 'dragonfly'];
 const MESS = { name: "A forager's mess", fill: 1, time: 15, icon: '🫠', text: "It's... food. Mostly." };
 const COOK_TIME = 30;                   // seconds a dish takes if it doesn't say
 const DISH_ICON = '🥣';
-const RECIPE_KEYS = ['name', 'needs', 'at', 'vessel', 'fill', 'level', 'from', 'warm', 'known', 'time', 'icon', 'text', 'eats', 'crisp'];
-const BUILD_KEYS = ['name', 'needs', 'where', 'after', 'makes', 'text'];
+const RECIPE_KEYS = ['name', 'needs', 'at', 'vessel', 'fill', 'level', 'from', 'warm', 'known', 'time', 'icon', 'text', 'eats', 'crisp', 'bottle'];
+const BUILD_KEYS = ['name', 'needs', 'where', 'after', 'makes', 'gone', 'text'];
 
 const recipeOf = name => RECIPES.find(r => r.name.toLowerCase() === String(name).toLowerCase());
 const isTag = word => Object.values(INGREDIENTS).some(g => g.tags.includes(word));
@@ -629,9 +782,12 @@ const whereOf = b => b.where || 'anywhere';
 const vesselOf = r => r.vessel || 'pot';
 
 // What comes out of a station with these things in it, cooked in a vessel: a recipe, or the mess. With no vessel (null) any
-// vessel does (game.js potWord asks it whether the things make a dish in another vessel).
+// vessel does (game.js potWord asks it whether the things make a dish in another vessel). A bottle's dish only once its
+// bottle has taught it (knowSecrets: the game says which it knows; recipes.html knows them all).
+let secretKnown = () => true;
+const knowSecrets = fn => { secretKnown = fn; };
 function cook(things, at = 'fire', vessel = null) {
-  return RECIPES.find(r => (r.at || 'fire') === at && (!vessel || vesselOf(r) === vessel) && fits(things, r.needs)) || MESS;
+  return RECIPES.find(r => (r.at || 'fire') === at && (!vessel || vesselOf(r) === vessel) && (!r.bottle || secretKnown(r)) && fits(things, r.needs)) || MESS;
 }
 
 // How long a dish cooks, in seconds at 1x.
@@ -662,6 +818,14 @@ function checkRecipes() {
     if (typeof g.fill !== 'number') problems.push(`Ingredient '${id}' needs a fill (a number).`);
     if (g.tags && g.tags.includes(id)) problems.push(`Ingredient '${id}' has itself as a tag.`);
     if (g.dries != null && !(INGREDIENTS[g.dries] && INGREDIENTS[g.dries].dried)) problems.push(`Ingredient '${id}' dries into '${g.dries}', which is no ingredient with dried: true.`);
+    const tool = !!g.tags && g.tags.includes('tool');
+    if (tool && !(g.uses >= 1 && g.uses === Math.floor(g.uses))) problems.push(`The tool '${id}' wants uses: how many it has new, a whole number (uses: 60).`);
+    if (tool && (!g.mend || typeof g.mend !== 'object' || Array.isArray(g.mend) || !Object.keys(g.mend).length)) problems.push(`The tool '${id}' wants mend: what puts it back to new, as a build's needs (mend: { rope: 1 }).`);
+    if (!tool && (g.uses != null || g.mend != null)) problems.push(`Ingredient '${id}' has uses or mend, but only a tool (tagged 'tool') wears.`);
+    if (tool && g.mend && typeof g.mend === 'object') for (const [word, n] of Object.entries(g.mend)) {
+      if (!INGREDIENTS[word] && !isTag(word)) problems.push(`The tool '${id}' is mended with '${word}', which is no ingredient or tag.`);
+      if (!(n >= 1) || n !== Math.floor(n)) problems.push(`The tool '${id}' is mended with ${n} of '${word}': it wants a whole number, 1 or more.`);
+    }
   }
   RECIPES.forEach((r, i) => {
     const who = r.name ? `'${r.name}'` : `Recipe number ${i + 1}`;
@@ -692,6 +856,8 @@ function checkRecipes() {
     if (r.level != null && typeof r.level !== 'number') problems.push(`${who} has a level that isn't a number.`);
     if (r.known != null && typeof r.known !== 'boolean') problems.push(`${who} has known: ${JSON.stringify(r.known)}, but it wants true or false.`);
     if (r.known && r.from) problems.push(`${who} is known from the start, so the ${r.from} has nothing to teach: leave one of them out.`);
+    if (r.bottle != null && !Object.values(TREASURES).some(t => t.kind === 'bottle' && t.dish === r.name)) problems.push(`${who} has bottle: ${r.bottle}, but no bottle in TREASURES teaches it.`);
+    if (r.bottle && (r.known || r.from)) problems.push(`${who} comes in a bottle, so it isn't known from the start or taught by a visitor.`);
   });
   for (const [id, b] of Object.entries(BUILDS)) {
     const who = `The build '${id}'`;
@@ -699,7 +865,7 @@ function checkRecipes() {
     for (const k of Object.keys(b)) if (!BUILD_KEYS.includes(k)) problems.push(`${who} has '${k}', which nothing reads (a typo?).`);
     if (b.where != null && b.where !== 'camp' && b.where !== 'anywhere') problems.push(`${who} has where: '${b.where}', but it's 'camp' or 'anywhere'.`);
     if (b.after != null && b.after !== 'camp' && b.after !== 'together' && !(typeof b.after === 'number' && b.after >= 0 && b.after === Math.floor(b.after))) problems.push(`${who} has after: ${JSON.stringify(b.after)}, but it's 'camp', 'together' or a Cooking level (2).`);
-    if (b.makes != null && !INGREDIENTS[b.makes] && !CARRIED[b.makes]) problems.push(`${who} makes '${b.makes}', which is no ingredient (or carried thing).`);
+    if (b.makes != null && !INGREDIENTS[b.makes]) problems.push(`${who} makes '${b.makes}', which is no ingredient.`);
     if (!b.needs || typeof b.needs !== 'object' || Array.isArray(b.needs)) { problems.push(`${who} needs what it takes: needs: { pebble: 6, stick: 5 }.`); continue; }
     for (const [word, n] of Object.entries(b.needs)) {
       if (!INGREDIENTS[word] && !isTag(word)) problems.push(`${who} needs '${word}', which is no ingredient or tag.`);
@@ -719,7 +885,29 @@ function checkRecipes() {
     if (!(k.run >= 0 && k.run <= 1)) problems.push(`${who} wants run: the odds of a last run, 0 to 1.`);
     if (!Array.isArray(k.grams) || k.grams.length !== 2 || !(k.grams[0] > 0 && k.grams[0] < k.grams[1])) problems.push(`${who} wants grams: [least, most], the least over 0.`);
   }
+  for (const [id, k] of Object.entries(HAUL)) {
+    const who = `The haul '${id}'`;
+    if (!INGREDIENTS[id]) problems.push(`${who} is no ingredient.`);
+    if (FISH[id]) problems.push(`${who} is a fish too: it goes in one table.`);
+    for (const key of Object.keys(k)) if (!HAUL_KEYS.includes(key)) problems.push(`${who} has '${key}', which nothing reads (a typo?).`);
+    if (!(k.from >= 0) || k.from !== Math.floor(k.from)) problems.push(`${who} wants from: a fishing level, 0 or more.`);
+    if (!(k.odds > 0 && k.odds < 0.2)) problems.push(`${who} wants odds: its chance at a bite, over 0 and well under 1 (0.01).`);
+    if (!['still', 'current', 'any'].includes(k.water)) problems.push(`${who} has water: '${k.water}', but it's 'still', 'current' or 'any'.`);
+    for (const key of ['current', 'trees', 'dark']) if (k[key] != null && !(k[key] > 0)) problems.push(`${who} wants ${key}: a number over 0, or left out.`);
+    if (!Array.isArray(k.seasons) || !k.seasons.length || k.seasons.some(n => ![0, 1, 2, 3].includes(n))) problems.push(`${who} wants seasons: a list of 0 to 3.`);
+    if (!Array.isArray(k.n) || k.n.length !== 2 || !(k.n[0] >= 1 && k.n[0] <= k.n[1]) || k.n.some(n => n !== Math.floor(n))) problems.push(`${who} wants n: [least, most], whole, 1 or more.`);
+    if (!HAUL_DRAGS.includes(k.drag)) problems.push(`${who} has drag: '${k.drag}', but it's ${HAUL_DRAGS.map(d => `'${d}'`).join(' or ')}.`);
+  }
   for (const [id, g] of Object.entries(INGREDIENTS)) if (g.tags.includes('fish') && !g.dried && !FISH[id]) problems.push(`The fish '${id}' has no block in FISH, so nothing bites as one.`);
+  for (const [id, t] of Object.entries(TREASURES)) {
+    const who = `The treasure '${id}'`;
+    if (!t.name) problems.push(`${who} has no name.`);
+    for (const key of Object.keys(t)) if (!TREASURE_KEYS.includes(key)) problems.push(`${who} has '${key}', which nothing reads (a typo?).`);
+    if (!TREASURE_KINDS.includes(t.kind)) problems.push(`${who} has kind: '${t.kind}', but it's ${TREASURE_KINDS.map(d => `'${d}'`).join(', ')}.`);
+    if (t.kind === 'bottle' && !(recipeOf(t.dish) && recipeOf(t.dish).bottle)) problems.push(`${who} teaches '${t.dish}', which is no dish with bottle: set.`);
+    if (t.kind === 'pearl' && !INGREDIENTS[id]) problems.push(`${who} goes in the satchel, so it wants an ingredient '${id}'.`);
+    if (HAUL[id] || FISH[id]) problems.push(`${who} is in HAUL or FISH too: it goes in one table.`);
+  }
   for (const [id, c] of Object.entries(CRAFTS)) {
     const who = `The craft '${id}'`;
     if (!VESSELS[id]) problems.push(`${who} isn't a vessel (${Object.keys(VESSELS).join(', ')}).`);
@@ -815,7 +1003,8 @@ const takes = word => (INGREDIENTS[word] ? [word] : Object.keys(INGREDIENTS).fil
 
 function stackOf(id) { const i = INGREDIENTS[id]; return (i && i.stack) || 0; }
 function keepOf(id) { const i = INGREDIENTS[id]; return (i && i.keep) || 0; }
-const Recipes = { stackOf, keepOf, STATIONS, VESSELS, vesselOf, craftLevel, whereOf, INGREDIENTS, RECIPES, BUILDS, CARRIED, FISH, CRAFTS, DEEDS, CAMP_LEVELS, MESS, cook, fits, fillOf, timeOf, recipeOf, takes, foodOf, eatsOf, EAT_WAYS, thingsFor, answers, checkRecipes, checkDeeds };
+function usesOf(id) { const i = INGREDIENTS[id]; return (i && i.uses) || 0; }
+const Recipes = { stackOf, keepOf, usesOf, PREP, prepOf, STATIONS, VESSELS, vesselOf, craftLevel, whereOf, INGREDIENTS, RECIPES, BUILDS, FISH, HAUL, TREASURES, knowSecrets, CRAFTS, DEEDS, CAMP_LEVELS, MESS, cook, fits, fillOf, timeOf, recipeOf, takes, foodOf, eatsOf, EAT_WAYS, thingsFor, answers, checkRecipes, checkDeeds };
 if (typeof module !== 'undefined') module.exports = Recipes;
 else {
   window.Recipes = Recipes;

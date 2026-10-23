@@ -1,0 +1,476 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Legend Lab</title>
+<link rel="icon" href="assets/favicon.ico" sizes="any">
+<style>
+  @font-face { font-family: Nunito; src: url(assets/fonts/nunito-normal-latin.woff2) format('woff2'); font-weight: 200 1000; }
+  :root { --bg: #f1ead8; --card: #fbf5e8; --ink: #3b372f; --muted: #8b8272; --line: #e6d8bc; --accent: #5f9346; --accent-soft: #e2edcf; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 500 14px/1.45 Nunito, ui-rounded, system-ui, sans-serif; }
+  main { max-width: 1240px; margin: 0 auto; padding: 24px 16px 60px; }
+  h1 { font-size: 26px; font-weight: 900; margin: 0 0 4px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin: 22px 0 10px; }
+  p.lead { color: var(--muted); margin: 0 0 10px; max-width: 80ch; }
+  ul.why { margin: 0 0 14px; padding-left: 18px; max-width: 92ch; color: var(--muted); font-size: 13px; }
+  ul.why b { color: var(--ink); }
+  .row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+  button { font: inherit; color: inherit; cursor: pointer; border: 1px solid var(--line); background: #fff; border-radius: 12px; padding: 7px 12px; font-weight: 700; min-height: 44px; }
+  button.on { background: var(--accent-soft); border-color: var(--accent); }
+  .sheet { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 14px; }
+  figure { margin: 0; background: var(--card); border-radius: 18px; padding: 10px; box-shadow: 0 8px 28px rgba(70, 55, 25, 0.12); }
+  canvas { display: block; width: 100%; height: auto; border-radius: 12px; cursor: pointer; }
+  figcaption { padding: 8px 4px 2px; }
+  figcaption b { font-weight: 900; }
+  figcaption i { font-style: normal; font-size: 11px; font-weight: 800; letter-spacing: .6px; text-transform: uppercase; color: var(--accent); display: block; margin-top: 1px; }
+  figcaption span { color: var(--muted); display: block; font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Legend Lab</h1>
+  <p class="lead">Stage 13's shape at the edge of the woods, at dusk, among the game's own trees (trees.js). The low sun
+    is on the left, so true light rims its left side and a true shadow falls right. "As in the game" hides it: tap a scene
+    and it stands there for 1.8 s, then it's gone.</p>
+  <div class="row">
+    <button id="game">As in the game</button>
+    <button id="fog">Fog</button>
+    <button id="near">Closer</button>
+  </div>
+  <h2>Tuning A, the almost-person</h2>
+  <p class="lead">A1 is A as picked. A2 to A7 each change one thing, A8 and A9 push everything toward wrong and toward
+    right, to find where it stops being "a person, nearly". The head turn plays on all of them: about a second after it
+    shows, the head tilts once and stays.</p>
+  <div class="row">
+    <button data-turn="off">No head turn</button>
+    <button data-turn="slow">Slow tilt</button>
+    <button data-turn="quick">Quick tilt</button>
+  </div>
+  <div class="sheet" id="tweaks"></div>
+  <h2>A1 to A9 up close, next to a person's height</h2>
+  <canvas id="close-tweaks" style="max-width:1100px;cursor:default"></canvas>
+  <h2 style="margin-top:34px">Round 2: five ideas</h2>
+  <p class="lead">Each sketch is built on one finding about what makes a near-human thing unsettling, and stays a fairy
+    tale, not horror:</p>
+  <ul class="why">
+    <li><b>Almost right beats very wrong.</b> Unease comes from a mix of human and not-human cues (perceptual mismatch,
+      MacDorman); a pile of monster features just reads as "monster". So each has one or two things off, by a little.</li>
+    <li><b>Relations, not parts.</b> Proportions and joints set slightly wrong (configural processing) unsettle more than an
+      odd feature does.</li>
+    <li><b>Not knowing.</b> Creepiness is uncertainty about whether there's a threat at all (McAndrew &amp; Koehnke). No face
+      to read, a pose with no clear intent, can't tell if it faces you, can't tell if it's a tree.</li>
+    <li><b>Still among moving things,</b> as a corpse is the floor of Mori's valley; and movement deepens the valley, so
+      "It notices you" tries one slow head turn and nothing else.</li>
+    <li><b>Something wearing a familiar shape</b> (the folk mimics): a doe, a sapling, the forager's own hood.</li>
+  </ul>
+  <div class="row">
+    <button id="notice">It notices you</button>
+  </div>
+  <div class="sheet" id="sheet"></div>
+  <h2>Up close, next to a person's height (you'd never see it like this)</h2>
+  <canvas id="close" style="max-width:1100px;cursor:default"></canvas>
+</main>
+<script src="sim.js"></script>
+<script src="trees.js"></script>
+<script>
+(() => {
+'use strict';
+const T = window.Trees, $ = s => document.querySelector(s);
+const W = 380, H = 300, DPR = 2, HORIZON = 168;
+const SHOW_MS = 1800;
+const st = { game: false, notice: false, fog: false, near: false };
+
+// ---- the trees, painted once and dimmed for dusk
+function dusk(src, a, tint = '42,34,74') {
+  const c = document.createElement('canvas');
+  c.width = src.width; c.height = src.height;
+  const g = c.getContext('2d');
+  g.drawImage(src, 0, 0);
+  g.globalCompositeOperation = 'source-atop';
+  g.fillStyle = `rgba(${tint},${a})`;
+  g.fillRect(0, 0, c.width, c.height);
+  c.bx = src.bx; c.by = src.by;
+  return c;
+}
+const TREE_SPECS = [['oak', 3, 0.62], ['beech', 5, 0.66], ['birch', 2, 0.6], ['pine', 4, 0.7], ['oak', 9, 0.55], ['alder', 6, 0.58], ['maple', 7, 0.6]];
+const trees = TREE_SPECS.map(([k, seed, sc]) => {
+  const p = T.paint(k, { seed, season: 'autumn', scale: sc * DPR, ss: 2 });
+  return { far: dusk(p, 0.72, '60,52,100'), near: dusk(p, 0.58) };
+});
+const stump = dusk(T.paint('stump', { seed: 3, season: 'autumn', scale: 0.75 * DPR, ss: 2 }), 0.62);
+
+// ---- the shapes
+// Each is a body (feet at 0, 0, h tall upward, in px at 1x) and a head painted apart, so the head alone can turn.
+// head.pivot is where it meets the neck; head.draw paints round that point. rim: where the warm light catches it
+// ('sun' is the true side, the left), 'wrong' the side away from the sun, 'none'.
+const BODY = '#1d1826';
+function limb(g, pts, w0, w1) {          // a tapering stroke through points
+  for (let i = 0; i < pts.length - 1; i++) {
+    const t = i / (pts.length - 1);
+    g.lineWidth = w0 + (w1 - w0) * t;
+    g.beginPath(); g.moveTo(...pts[i]); g.lineTo(...pts[i + 1]); g.stroke();
+  }
+}
+const blob = (g, x, y, rx, ry, a = 0) => { g.beginPath(); g.ellipse(x, y, rx, ry, a, 0, Math.PI * 2); g.fill(); };
+// A, the almost-person, tunable: tall scales all of it (1 is 1.5 times a person), head the head alone, reach is where
+// the hands hang (the coat's hem is at -30, a person's knee about -20), girth how wide the coat is (thinner, the arms
+// hang clear of it)
+function almostOf({ tall = 1, head = 1, reach = -26, girth = 1 } = {}) {
+  const c = girth, sx = 6.5 * c + 0.6;
+  const arm = c === 1 ? [[6.8, -76], [8.6, -57], [9.2, -39], [9, reach]]
+    : [[sx, -76.5], [sx + 2, -68], [8.9, -54], [9.2, -39], [9, reach]];   // from the narrow shoulder, out and down
+  return {
+    h: 96 * tall, rim: 'wrong', shadow: 'none',
+    body(g) {
+      g.save(); g.scale(tall, tall);
+      limb(g, [[-3, 0], [-3.3, -20], [-3, -38]], 3, 4);
+      limb(g, [[3, 0], [3.3, -20], [3, -38]], 3, 4);
+      g.beginPath();                       // the coat, narrow shoulders, a little flare at the hem
+      g.moveTo(-6.5 * c, -78); g.bezierCurveTo(-8 * c, -66, -9.5 * c, -44, -9.5 * c, -30);
+      g.lineTo(9.5 * c, -30); g.bezierCurveTo(9.5 * c, -44, 8 * c, -66, 6.5 * c, -78);
+      g.quadraticCurveTo(0, -81, -6.5 * c, -78); g.fill();
+      limb(g, arm.map(([x, y]) => [-x, y]), 2.7, 2);   // the arms
+      limb(g, arm, 2.7, 2);
+      blob(g, -9, reach + 1, 1.7, 2); blob(g, 9, reach + 1, 1.7, 2);
+      g.fillRect(-1.5, -84, 3, 6);         // neck
+      g.restore();
+    },
+    head: {
+      pivot: [0, -82 * tall], angle: 0, turn: 0.28,
+      draw(g) { g.save(); g.scale(tall, tall); blob(g, 0, -5.6 * head, 4.1 * head, 5.1 * head); g.restore(); },
+    },
+  };
+}
+const SHAPES = {
+  almost: {
+    name: 'The almost-person', idea: 'perceptual mismatch, by a little',
+    note: 'A person in a long coat, nearly. The head a little small, the arms a little long, never enough to name. No face, so you can\'t tell if it\'s looking at you or walking away.',
+    ...almostOf(),
+  },
+  tilt: {
+    name: 'The tilt', idea: 'a held pose with no clear intent',
+    note: 'Stands too straight, arms pinned to its sides, the head laid over on one shoulder and held there. A tilted head is how a dog wonders about you; held still on something this tall it reads as wrong. Its shadow is right: one true thing, so it can\'t be waved away.',
+    h: 108, rim: 'sun', shadow: 'true', eyes: 'pale',
+    body(g) {
+      limb(g, [[-2.2, 0], [-2.4, -24], [-2.6, -47]], 2.4, 3.3);
+      limb(g, [[2.2, 0], [2.4, -24], [2.6, -47]], 2.4, 3.3);
+      g.beginPath();                       // a straight, narrow body
+      g.moveTo(-4.6, -46); g.lineTo(-6.6, -86); g.quadraticCurveTo(0, -89, 6.6, -86); g.lineTo(4.6, -46); g.closePath(); g.fill();
+      limb(g, [[-7, -85], [-7.5, -62], [-7.6, -42]], 2.3, 1.7);
+      limb(g, [[7, -85], [7.5, -62], [7.6, -42]], 2.3, 1.7);
+    },
+    head: {                                // the neck goes with the head, a touch too long, so the whole of it leans
+      pivot: [0, -86], angle: 0.42, turn: 0.3,
+      draw(g) { g.fillRect(-1.4, -11, 2.8, 12); blob(g, 0, -15.5, 4.4, 5.8); },
+      eyes: [[-2, -16.2], [2, -16.2]],
+    },
+  },
+  doe: {
+    name: 'The upright doe', idea: 'a familiar animal, worn wrong',
+    note: 'A doe\'s head, ears and long neck, on something standing up like a person. Its knees bend backward, as a deer\'s hind legs do, and its arms are thin forelegs that end in hooves. The eyes shine like an animal\'s at dusk.',
+    h: 100, rim: 'sun', shadow: 'none', eyes: 'shine',
+    body(g) {
+      for (const [dx, w] of [[3.5, 2.3], [0, 2.7]]) {   // two legs, the far one a step back
+        limb(g, [[dx - 0.5, 0], [dx + 0.6, -5], [dx + 4.8, -20], [dx - 1, -36], [dx + 0.5, -44]], w * 0.8, w * 1.6);
+        blob(g, dx - 0.6, -0.4, 1.8, 1);   // the hooves
+      }
+      g.beginPath();                       // the body, upright, a little hunched
+      g.moveTo(-5.5, -42); g.bezierCurveTo(-8, -58, -7, -72, -3.5, -79);
+      g.quadraticCurveTo(2, -82, 5.5, -76); g.bezierCurveTo(7, -64, 7.5, -52, 6, -42); g.closePath(); g.fill();
+      limb(g, [[-1.5, -78], [-3.5, -86], [-5, -92]], 4.4, 3.2);   // the neck, up and forward
+      limb(g, [[-4, -76], [-6.2, -63], [-5.5, -52], [-6.4, -45]], 2, 1.3);
+      limb(g, [[4.5, -75], [5.8, -61], [5.2, -50]], 1.8, 1.2);
+      blob(g, -6.6, -44, 1.1, 1.5); blob(g, 5.3, -49, 1, 1.4);
+    },
+    head: {
+      pivot: [-5, -91], angle: 0, turn: -0.3,
+      draw(g) {
+        blob(g, 0, -3.6, 4.2, 4.3);                        // the crown
+        g.beginPath(); g.moveTo(-1.5, -6.6); g.quadraticCurveTo(-8, -4.5, -11, -1.6);    // the long muzzle, to the left
+        g.quadraticCurveTo(-11.6, 0.4, -9.5, 0.6); g.quadraticCurveTo(-4, 1, 0, 0); g.closePath(); g.fill();
+        blob(g, 2.6, -10, 1.7, 4.6, 0.55); blob(g, -0.6, -10.6, 1.5, 4.2, -0.15);        // ears
+      },
+      eyes: [[-2.6, -4.2], [0.8, -4.8]],
+    },
+  },
+  bare: {
+    name: 'The bare one', idea: 'tree, or someone?',
+    note: 'A bare grey sapling in an autumn wood, with two branches. Branches reach up; these hang down, like arms. And it\'s the one tree that doesn\'t move in the wind. The eye keeps going back to decide which it is.',
+    h: 110, rim: 'sun', shadow: 'true', eyes: 'hollow', fill: '#3b3238', bark: true,
+    body(g) {
+      limb(g, [[-5, 0.5], [-3.4, -12], [-1.5, -26]], 4.4, 4.6);   // the trunk splits in two near the ground
+      limb(g, [[4.6, 0.5], [3.2, -11], [1.5, -26]], 4.2, 4.6);
+      limb(g, [[-7.5, 0.6], [-4.5, -2.5]], 2, 1.2);  limb(g, [[7.2, 0.6], [4.4, -2]], 2, 1.2);  // roots, or toes
+      limb(g, [[0, -24], [0.8, -42], [0.3, -62], [0, -86]], 9, 4.4);
+      limb(g, [[0.6, -50], [4, -57]], 1.2, 0.5); limb(g, [[-0.4, -66], [-3.6, -71]], 1, 0.4);   // stubs off the trunk
+      const arm = s => {                   // a branch with kinks in it, hanging where a branch would rise
+        limb(g, [[s * 2, -81], [s * 8, -80], [s * 11.5, -72], [s * 13.8, -63], [s * 13, -53], [s * 14, -45]], 3.4, 1.2);
+        for (const f of [-1, 0, 1]) limb(g, [[s * 14, -45], [s * (14 + f * 1.5), -40.5]], 0.8, 0.35);   // twig fingers
+        limb(g, [[s * 9, -79.5], [s * 10.5, -87]], 1.1, 0.4);   // one twig that does go up
+      };
+      arm(-1); arm(1);
+    },
+    head: {
+      pivot: [0, -85], angle: -0.1, turn: 0.32,
+      draw(g) { blob(g, 0.4, -4.8, 3.5, 5, 0.1); limb(g, [[1, -9], [2.6, -14]], 0.9, 0.4); },
+      eyes: [[-1.3, -5.4], [1.8, -5.2]],
+    },
+  },
+  mask: {
+    name: 'The small face', idea: 'a face that gives nothing back',
+    note: 'A cloak and hood like the forager\'s, a head taller, and in the hood a small pale face, too small for it: two dark holes and nothing else. A face is the first thing the eye finds in a dark wood, and this one can\'t be read.',
+    h: 100, rim: 'sun', shadow: 'wrong',
+    body(g) {
+      g.beginPath();
+      g.moveTo(-13, 0); g.bezierCurveTo(-11, -28, -10, -56, -9, -70);
+      g.bezierCurveTo(-10.5, -86, -5, -98.5, 0, -99.5); g.bezierCurveTo(5, -98.5, 10.5, -86, 9, -70);
+      g.bezierCurveTo(10, -56, 11, -28, 13, 0); g.quadraticCurveTo(0, 3, -13, 0); g.fill();
+    },
+    after(g) { g.fillStyle = '#07050a'; blob(g, 0, -83, 5.4, 7); },   // the hood's dark inside
+    head: {
+      pivot: [0, -82], angle: 0.1, turn: 0.3, fill: '#b9ad9f', rim: 'none',
+      draw: g => blob(g, 0, 0, 3.1, 4.1),
+      after(g) {
+        g.fillStyle = 'rgba(30,22,40,0.35)'; blob(g, 0, 2.6, 2.6, 1.6);     // dusk on its chin
+        g.fillStyle = '#120d16'; blob(g, -1.25, -0.7, 0.62, 0.95); blob(g, 1.25, -0.7, 0.62, 0.95);
+      },
+    },
+  },
+};
+
+// one part, painted once: a dark fill, a warm rim on one side, a faint cold sheen
+function paintPart(draw, look, k, box) {
+  const [x0, y0, x1, y1] = box, cw = Math.ceil((x1 - x0) * k), ch = Math.ceil((y1 - y0) * k);
+  const mk = () => {
+    const c = document.createElement('canvas'); c.width = cw; c.height = ch;
+    const g = c.getContext('2d'); g.setTransform(k, 0, 0, k, -x0 * k, -y0 * k); g.lineCap = g.lineJoin = 'round';
+    return [c, g];
+  };
+  const [body, b] = mk();
+  b.fillStyle = b.strokeStyle = look.fill || BODY;
+  draw(b);
+  if (look.bark) {                       // a few lighter streaks, as the trees' bark has
+    b.globalCompositeOperation = 'source-atop'; b.strokeStyle = 'rgba(160,145,150,0.22)';
+    for (let i = 0; i < 46; i++) {
+      const x = ((i * 53) % 31) - 15, y = -((i * 97) % 112), l = 3 + (i * 7) % 6;
+      limb(b, [[x, y], [x + 0.2, y - l]], 0.5, 0.3);
+    }
+  }
+  const [out, g] = mk();
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  const rim = look.rim || 'sun';
+  if (rim !== 'none') {
+    const [rc, r] = mk();
+    r.setTransform(1, 0, 0, 1, 0, 0); r.drawImage(body, 0, 0);
+    r.globalCompositeOperation = 'source-in'; r.fillStyle = 'rgba(255,170,110,0.62)'; r.fillRect(0, 0, cw, ch);
+    g.drawImage(rc, (rim === 'sun' ? -1.1 : 1.1) * k, -0.4 * k);
+  }
+  g.filter = `blur(${0.25 * k}px)`;
+  g.drawImage(body, (rim === 'wrong' ? -0.2 : 0.2) * k, 0);
+  g.filter = 'none';
+  g.globalCompositeOperation = 'source-atop';
+  const lg = g.createLinearGradient(0, 0, cw, 0);
+  lg.addColorStop(0, 'rgba(120,100,150,0.18)'); lg.addColorStop(0.5, 'rgba(0,0,0,0)'); lg.addColorStop(1, 'rgba(0,0,0,0.25)');
+  g.fillStyle = lg; g.fillRect(0, 0, cw, ch);
+  g.globalCompositeOperation = 'source-over';
+  g.setTransform(k, 0, 0, k, -x0 * k, -y0 * k);
+  if (look.after) look.after(g);
+  for (const [x, y] of look.eyes || []) {
+    if (look.eyeKind === 'hollow') { g.fillStyle = '#0c090e'; blob(g, x, y, 0.75, 0.9); continue; }
+    const shine = look.eyeKind === 'shine', R = shine ? 1.7 : 2.4;
+    const rg = g.createRadialGradient(x, y, 0, x, y, R);
+    if (shine) { rg.addColorStop(0, 'rgba(236,255,196,1)'); rg.addColorStop(0.3, 'rgba(200,240,150,0.6)'); rg.addColorStop(1, 'rgba(180,230,130,0)'); }
+    else { rg.addColorStop(0, 'rgba(255,246,220,0.95)'); rg.addColorStop(0.35, 'rgba(255,236,200,0.55)'); rg.addColorStop(1, 'rgba(255,236,200,0)'); }
+    g.fillStyle = rg; g.beginPath(); g.arc(x, y, R, 0, Math.PI * 2); g.fill();
+  }
+  out.box = box;
+  return out;
+}
+const HEAD_BOX = [-16, -26, 16, 10];
+function paintShape(sh, k) {
+  const hd = sh.head;
+  return {
+    body: paintPart(sh.body, { fill: sh.fill, rim: sh.rim, bark: sh.bark, after: sh.after }, k, [-32, -(sh.h + 16), 32, 8]),
+    head: paintPart(hd.draw, { fill: hd.fill || sh.fill, rim: hd.rim || sh.rim, bark: sh.bark, after: hd.after, eyes: hd.eyes, eyeKind: sh.eyes }, k, HEAD_BOX),
+  };
+}
+// draws a painted shape with its feet at (x, y), s px a unit; notice 0..1 turns the head
+function drawShape(g, sh, art, x, y, s, notice) {
+  const put = (c, ox, oy) => { const [x0, y0, x1, y1] = c.box; g.drawImage(c, ox + x0 * s, oy + y0 * s, (x1 - x0) * s, (y1 - y0) * s); };
+  put(art.body, x, y);
+  const hd = sh.head;
+  g.save(); g.translate(x + hd.pivot[0] * s, y + hd.pivot[1] * s); g.rotate(hd.angle + hd.turn * notice);
+  put(art.head, 0, 0);
+  g.restore();
+}
+const ease = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
+
+// ---- the scenes
+const SCENES = [
+  { shape: 'almost', at: 190, ground: 216 },
+  { shape: 'tilt', at: 196, ground: 214 },
+  { shape: 'doe', at: 182, ground: 220 },
+  { shape: 'bare', at: 200, ground: 214 },
+  { shape: 'mask', at: 188, ground: 218 },
+  { shape: null, at: 190, ground: 220, note: true },
+];
+// A's tweaks: [settings, name, what changed]. All stand in the same spot among the same trees, to compare.
+const TWEAKS = {
+  a1: [{}, 'As picked', 'Half again a person\'s height, the head a little small, the hands hanging past the coat\'s hem.'],
+  a2: [{ tall: 0.85 }, 'Shorter', 'About a head and a half taller than a person (1.3×): someone you could almost meet.'],
+  a3: [{ tall: 1.2 }, 'Taller', 'Nearly twice a person\'s height (1.8×), its head up among the lower branches.'],
+  a4: [{ head: 0.8 }, 'Smaller head', 'The head shrunk by a fifth: a pin on a coat.'],
+  a5: [{ head: 1.25 }, 'A true-sized head', 'The head right for a person, so only the height and the arms are off.'],
+  a6: [{ reach: -17 }, 'Longer arms', 'The hands hang down at its knees.'],
+  a7: [{ reach: -31 }, 'True-length arms', 'The hands at the coat\'s hem, where a person\'s would be.'],
+  a8: [{ tall: 1.2, head: 0.8, reach: -17 }, 'All further', 'Taller, a smaller head, longer arms together: does it tip over into "monster"? (Picked.)'],
+  a9: [{ tall: 0.85, head: 1.25, reach: -31 }, 'All gentler', 'Just a tall person in a coat. Is standing still, unlit and shadowless, enough?'],
+};
+const TWEAK_SHAPES = Object.fromEntries(Object.entries(TWEAKS).map(([n, [o]]) => [n, almostOf(o)]));
+const ALL = { ...SHAPES, ...TWEAK_SHAPES };
+const TWEAK_SCENES = Object.keys(TWEAKS).map(n => ({ shape: n, at: 190, ground: 216, layout: 0, tweak: true }));
+const LIGHT = { sun: 'caught by the low sun on its left, as the trees are', wrong: 'lit on the side away from the sun', none: 'no light on it at all' };
+const SHADOW = { true: 'falls away from the sun, as it should', wrong: 'falls toward the sun', none: 'none' };
+// tree rows: [which, x, footY]
+const ROWS = [
+  [[3, 40, 182], [0, 110, 178], [5, 300, 180], [1, 350, 184], [6, 230, 176]],
+  [[2, 70, 206], [4, 150, 214], [1, 270, 212], [3, 340, 222]],
+];
+function scene(sc, i) {
+  const fig = document.createElement('figure');
+  const cv = document.createElement('canvas');
+  cv.width = W * DPR; cv.height = H * DPR;
+  const cap = document.createElement('figcaption');
+  const sh = sc.shape && ALL[sc.shape];
+  cap.innerHTML = sc.tweak ? `<b>A${i + 1}. ${TWEAKS[sc.shape][1]}</b><span>${TWEAKS[sc.shape][2]}</span>`
+    : sh ? `<b>${String.fromCharCode(65 + i)}. ${sh.name}</b><i>${sh.idea}</i><span>${sh.note} Light: ${LIGHT[sh.rim]}. Shadow: ${SHADOW[sh.shadow]}.</span>`
+    : `<b>A false glimpse</b><i>most of a legend is ordinary things</i><span>A lightning stump at the same edge with the light behind it, two gaps in its bark where the sky shows through. Plainly a stump once you're close.</span>`;
+  fig.append(cv, cap);
+  $(sc.tweak ? '#tweaks' : '#sheet').append(fig);
+  sc.cv = cv; sc.g = cv.getContext('2d'); sc.sh = sh; sc.showUntil = 0;
+  cv.addEventListener('click', () => { sc.showUntil = performance.now() + SHOW_MS; });
+}
+SCENES.forEach(scene);
+TWEAK_SCENES.forEach(scene);
+const EVERY_SCENE = [...TWEAK_SCENES, ...SCENES];
+const art = {};
+function shapeArt(k) {
+  if (!art[k]) art[k] = Object.fromEntries(Object.entries(ALL).map(([n, s]) => [n, paintShape(s, k)]));
+  return art[k];
+}
+// how far the head has turned: in the game, from when it showed; otherwise on a loop
+function noticeAt(sc, t) {
+  const on = sc.tweak ? st.turn !== 'off' : st.notice;
+  if (!on) return 0;
+  const dur = sc.tweak && st.turn === 'quick' ? 160 : 800;
+  if (st.game) return ease((t - (sc.showUntil - SHOW_MS) - 800) / dur);
+  const p = t % 5000;
+  return p < 4400 ? ease((p - 1400) / dur) : 1 - ease((p - 4400) / 500);
+}
+
+function drawTree(g, c, x, y, t, seed) {
+  const sway = Math.sin(t * 0.0011 + seed * 1.7) * 0.012 + Math.sin(t * 0.0023 + seed) * 0.005;
+  g.save(); g.translate(x, y); g.rotate(sway);
+  g.drawImage(c, -c.bx / DPR, -c.by / DPR, c.width / DPR, c.height / DPR);
+  g.restore();
+}
+function shadowOf(g, sh, fx, fy) {
+  if (sh.shadow === 'none') return;
+  const L = sh.h * 0.95, d = sh.shadow === 'true' ? 1 : -1;
+  const sg = g.createLinearGradient(fx, 0, fx + d * L, 0);
+  sg.addColorStop(0, 'rgba(10,8,20,0.55)'); sg.addColorStop(1, 'rgba(10,8,20,0)');
+  g.fillStyle = sg; g.beginPath(); g.ellipse(fx + d * L / 2, fy + 1, L / 2, 3.5, d * 0.03, 0, Math.PI * 2); g.fill();
+}
+function frame(t) {
+  const zoom = st.near ? 1.6 : 1;
+  const arts = shapeArt(DPR * zoom);
+  for (const sc of EVERY_SCENE) {
+    const g = sc.g, i = sc.layout ?? SCENES.indexOf(sc);
+    g.setTransform(DPR, 0, 0, DPR, 0, 0);
+    // sky
+    const sk = g.createLinearGradient(0, 0, 0, HORIZON);
+    sk.addColorStop(0, '#2f2b52'); sk.addColorStop(0.55, '#8c5a80'); sk.addColorStop(1, '#eea06a');
+    g.fillStyle = sk; g.fillRect(0, 0, W, HORIZON + 2);
+    const sun = g.createRadialGradient(70, HORIZON - 6, 2, 70, HORIZON - 6, 150);
+    sun.addColorStop(0, 'rgba(255,214,150,0.95)'); sun.addColorStop(0.2, 'rgba(255,170,110,0.45)'); sun.addColorStop(1, 'rgba(255,150,100,0)');
+    g.fillStyle = sun; g.fillRect(0, 0, W, HORIZON + 2);
+    // ground
+    const gr = g.createLinearGradient(0, HORIZON, 0, H);
+    gr.addColorStop(0, '#4a4a3e'); gr.addColorStop(0.25, '#36402f'); gr.addColorStop(1, '#232a20');
+    g.fillStyle = gr; g.fillRect(0, HORIZON, W, H - HORIZON);
+    // the back row
+    if (st.near) { g.save(); g.translate(W / 2, sc.ground); g.scale(zoom, zoom); g.translate(-W / 2, -sc.ground); }
+    for (const [k, x, y] of ROWS[0]) drawTree(g, trees[k].far, x + i * 7 % 30, y, t, k + x);
+    // it stands between the rows
+    const shown = !st.game || t < sc.showUntil;
+    const fx = sc.at, fy = sc.ground - 12;
+    if (sc.sh && shown) {
+      shadowOf(g, sc.sh, fx, fy);
+      drawShape(g, sc.sh, arts[sc.shape], fx, fy, 1, noticeAt(sc, t));
+    }
+    if (sc.note) {
+      g.drawImage(stump, fx - stump.bx / DPR, fy - stump.by / DPR, stump.width / DPR, stump.height / DPR);
+      for (const dx of [-1.6, 2.2]) {        // the sky through two holes in it
+        const x = fx + dx, y = fy - stump.by / DPR * 0.62;
+        const rg = g.createRadialGradient(x, y, 0, x, y, 2);
+        rg.addColorStop(0, 'rgba(255,236,200,0.8)'); rg.addColorStop(1, 'rgba(255,236,200,0)');
+        g.fillStyle = rg; g.beginPath(); g.arc(x, y, 2, 0, Math.PI * 2); g.fill();
+      }
+    }
+    // the front row
+    for (const [k, x, y] of ROWS[1]) {
+      const xx = (x + i * 37) % (W + 40) - 20;
+      if (Math.abs(xx - fx) < 70) continue;   // leave it a gap to stand in
+      drawTree(g, trees[k].near, xx, y, t, k * 3 + x);
+    }
+    if (st.near) g.restore();
+    if (st.fog) {
+      const fg = g.createLinearGradient(0, 80, 0, H);
+      fg.addColorStop(0, 'rgba(200,190,215,0)'); fg.addColorStop(0.5, 'rgba(190,180,210,0.42)'); fg.addColorStop(1, 'rgba(170,165,190,0.55)');
+      g.fillStyle = fg; g.fillRect(0, 0, W, H);
+    }
+  }
+  requestAnimationFrame(frame);
+}
+// shapes big on the dusk sky, with a person's height marked
+function lineup(c, shapes, S, ch, labels) {
+  const cw = 1100, foot = ch * 0.9, step = (cw - 110) / shapes.length;   // room on the left for the label
+  c.width = cw * DPR; c.height = ch * DPR;
+  const g = c.getContext('2d'); g.scale(DPR, DPR);
+  const sk = g.createLinearGradient(0, 0, 0, ch);
+  sk.addColorStop(0, '#2f2b52'); sk.addColorStop(0.6, '#8c5a80'); sk.addColorStop(0.9, '#eea06a'); sk.addColorStop(0.9, '#36402f'); sk.addColorStop(1, '#232a20');
+  g.fillStyle = sk; g.fillRect(0, 0, cw, ch);
+  const PERSON = 64;                   // a grown person at the lab's scale, about the forager's
+  g.strokeStyle = 'rgba(255,240,220,0.45)'; g.lineWidth = 1.5; g.setLineDash([6, 5]);
+  g.beginPath(); g.moveTo(16, foot - PERSON * S); g.lineTo(cw - 16, foot - PERSON * S); g.stroke();
+  g.setLineDash([]); g.fillStyle = 'rgba(255,240,220,0.6)'; g.font = '700 12px Nunito, sans-serif';
+  g.fillText('a person', 18, foot - PERSON * S - 6);
+  shapes.forEach((sh, i) => {
+    const x = 90 + step * (i + 0.5);
+    drawShape(g, sh, paintShape(sh, DPR * S), x, foot, S, 0);
+    if (labels) { g.textAlign = 'center'; g.fillText(labels[i], x, foot + 22); g.textAlign = 'start'; }
+  });
+}
+lineup($('#close'), Object.values(SHAPES), 3, 440);
+lineup($('#close-tweaks'), Object.values(TWEAK_SHAPES), 2.3, 360, Object.keys(TWEAKS).map(n => n.toUpperCase()));
+const ask = new URLSearchParams(location.search);   // ?notice&near&turn=slow starts with those on
+st.turn = ask.get('turn') || 'off';
+for (const b of document.querySelectorAll('[data-turn]')) {
+  b.classList.toggle('on', b.dataset.turn === st.turn);
+  b.addEventListener('click', () => {
+    st.turn = b.dataset.turn;
+    for (const o of document.querySelectorAll('[data-turn]')) o.classList.toggle('on', o === b);
+  });
+}
+for (const id of ['game', 'notice', 'fog', 'near']) {
+  const b = $('#' + id), set = on => { st[id] = on; b.classList.toggle('on', on); };
+  set(ask.has(id));
+  b.addEventListener('click', () => set(!st[id]));
+}
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

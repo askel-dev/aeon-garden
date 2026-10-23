@@ -4125,7 +4125,7 @@ const FIND_SNOW = 0.3;                  // snow this deep covers the low ones
 const BIRCH_NEAR = 2.6;                 // tiles from a birch's trunk its bark may lie (under the crown, or a little way out)
 // The kinds: when (from, to: seasons into the year, 0 spring to 4, wrapping into the next spring), where (findPlace),
 // how many at most (times w.room), and how many a pick gives (n). low: snow covers it. wet: it stands in the shallows.
-// The last four are what lies on the ground for a fire (ground: they don't glint, they're not food), there all year:
+// The last six are what lies on the ground for a fire (ground: they don't glint, they're not food), there all year:
 // days, how long one lies (else FIND_DAYS); more, its most by season (spring to winter). Sticks are the commonest, and
 // more come down in rain and storms (STICK_WIND); dry grass is mostly a summer and autumn thing, a little all year (its
 // stems stand up out of the snow, so there's always tinder for a first fire).
@@ -4142,6 +4142,7 @@ const FINDS = {
   drygrass:    { name: 'Dry grass',         from: 0,    to: 4,    place: 'long',     most: 9,  n: 2, low: false, ground: true, days: [3, 6], more: [0.5, 1, 1, 0.5] },
   birchbark:   { name: 'Birch bark',        from: 0,    to: 4,    place: 'birch',    most: 5,  n: 2, low: false, ground: true, days: [5, 10] },
   clay:        { name: 'Clay',              from: 0,    to: 4,    place: 'muddy',    most: 5,  n: 2, low: false, ground: true, days: [12, 24] },
+  slab:        { name: 'Flat stone',        from: 0,    to: 4,    place: 'stony',    most: 2,  n: 1, low: false, ground: true, days: [20, 40] },
 };
 const STICK_WIND = { rain: 1.4, storm: 2.2 };   // sticks lie about this many times more in rain and storms, and come down faster
 const DRY_GRASS = 0.5;                  // grass this long (w.grass) is long enough to have dry stems in it
@@ -5584,7 +5585,8 @@ const BRUSH_NEAR = 2.5;                 // tiles about it it looks for brush in,
 // Every field it ever has, in one order (see blankCreature). path: the way, as x, y pairs; leg: the pair it's heading
 // for; speed, heading: tiles a tick, radians (0 east, pi / 2 down the screen); moved: how far it went last tick;
 // goalX, goalY: where it was sent; running: sprinting there; sneaking: creeping (game.js's sneak emote; a sprint wins).
-// bag, bagN: the satchel's slots, what's in each (an ingredient's id, recipes.js) and how many (gather, stow).
+// bag, bagN: the satchel's slots, what's in each (an ingredient's id, recipes.js) and how many (gather, stow); bagUse: the
+// uses a tool in a slot has had (0 new, or not a tool: wear).
 // warmth (1 cosy, 0 collapsed), wet (0 dry, 1 soaked), stamina (1 fresh, 0 spent), feel: how warm it feels about it
 // now (in degrees, like airTemp), winded: spent, no sprint till it's got its breath back, down: the tick it collapsed
 // (-1: on its feet), stumble: ticks left of a stumble, homeX, homeY: where it wakes (where it started, then by the camp's fire),
@@ -5594,22 +5596,26 @@ const BRUSH_NEAR = 2.5;                 // tiles about it it looks for brush in,
 // off (drawing its take-off once); hop: the momentum it has (chained dashes, 0 to 1), hopBuf: ticks a press while up is
 // kept for the landing, hopWin: ticks after landing a press still chains, landTick: the tick it last came down (0: never),
 // hopAim: the way that kept press was aimed (radians).
-// kit: what it has made (kitOf, shapeVessel), kept at camp, never in the satchel. rod: 1 once it has made a fishing rod
-// (recipes.js CARRIED), carried for good; the fishing itself is game.js's, and what it lands it takes here (takeFish).
+// kit: what it has made (kitOf, shapeVessel), kept at camp, never in the satchel. rod: 1 in a meadow kept when the fishing
+// rod was carried for good, out of a slot (unpackWorld puts it in the satchel now, and it stays 0); the rod is an item
+// (recipes.js INGREDIENTS.rod), the fishing game.js's, and what it lands it takes here (takeFish).
 // fishBest: the biggest of each kind it has landed, { roach: grams } (game.js landFish; a kind not yet landed isn't in it).
 // hand: the dish it carries in its hand (a dish's name, '' for none): one at most, and lost with the satchel. handHeat: how hot
 // it still is (1 off the fire, 0 cold: HAND_COOL), handFull: how much of it is left (1, down to HAND_LEAST sprinting with it).
 const SLOTS = 8, STACK = 10;            // the satchel's slots, and how many of a kind one holds (by default)
 let stackFn = null;                     // recipes.js stackOf and keepOf, handed over by setStacks (the sim has no recipes of its own)
 let keepFn = null;
-function setStacks(fn, kn) { stackFn = fn; keepFn = kn || null; }
+let usesFn = null;                      // recipes.js usesOf: a tool's uses when new (0: not a tool)
+function setStacks(fn, kn, un) { stackFn = fn; keepFn = kn || null; usesFn = un || null; }
+const usesOf = id => (usesFn && id && usesFn(id)) || 0;
 function stackOf(id, S) {               // how many of one kind a slot holds: what a set-down store keeps, or what a satchel carries
+  if (usesOf(id)) return 1;             // (a tool never piles, anywhere: each keeps its own wear, bagUse)
   const kept = (S && S.kept) || 1;      // (a store that keeps more than a satchel: the drying rack's 2)
   return ((S && S.kept && keepFn && keepFn(id)) || (stackFn && stackFn(id)) || STACK) * kept;
 }
 function foragerOf(x, y) {
   const f = { forager: true, x, y, path: [], leg: 0, speed: -0, heading: Math.PI / 2, moved: -0, walking: false, goalX: x, goalY: y,
-    running: false, sneaking: false, bag: new Array(SLOTS).fill(''), bagN: new Array(SLOTS).fill(0),
+    running: false, sneaking: false, bag: new Array(SLOTS).fill(''), bagN: new Array(SLOTS).fill(0), bagUse: new Array(SLOTS).fill(0),
     warmth: -0, wet: -0, stamina: -0, feel: -0, winded: false, down: -1, stumble: 0, homeX: x, homeY: y, tummy: -0, warmIn: 0, health: -0,
     jumpT: 0, jz: -0, jumpV: -0, jumpSpeed: -0, jumpFX: -0, jumpFY: -0, jumpAt: 0,
     hop: -0, hopBuf: 0, hopWin: 0, landTick: 0, hopAim: -0,
@@ -5665,7 +5671,7 @@ function stoneOf(w) {
 
 // The rocks in its way, worked out once a meadow (rocks never come or go): x, y and how near it comes to the middle
 // (solidR, as x, y, r threes), and the tiles whose middle is that near one, which it can't step on (solidTile).
-let solidW = null, solidR = [], solidTile = null, solidN = 0;   // (solidN: the circles that walking steps out of one by one; the seat log's after them are one capsule, seatSolid)
+let solidW = null, solidR = [], solidTile = null, solidN = 0;   // (solidN: the circles that walking steps out of one by one; after them each seat log's SEAT_SOLID are one capsule)
 function rocksFor(w) {
   if (solidW === w) return;
   solidW = w; solidR = [];
@@ -5686,8 +5692,7 @@ function rocksFor(w) {
         if (Math.hypot(tx + 0.5 - d.x, ty + 0.5 - d.y) < r) solidTile[ty * W + tx] = 1;
   }
   solidN = solidR.length;
-  const Q = w.camp && w.camp.seat;                          // (the camp's seat log: a row of them along it, seatEnds)
-  if (Q) {
+  for (const Q of w.seats) {                                // (the seat logs: a row of circles along each, seatEnds)
     const r = SEAT_DEEP + FORAGER_GIRTH;
     seatEnds(Q);
     for (let k = 0; k < SEAT_SOLID; k++) {
@@ -5702,9 +5707,9 @@ function rocksFor(w) {
 // Whether the leg from x0, y0 to x1, y1 keeps clear of every rock.
 function pastRocks(x0, y0, x1, y1) {
   for (let k = 0; k < solidN; k += 3) if (segDist(solidR[k], solidR[k + 1], x0, y0, x1, y1) < solidR[k + 2]) return false;
-  if (solidR.length > solidN) {                            // (the seat log: a capsule, its ends the first and last circle)
-    const e = solidR.length - 3, r = solidR[e + 2];
-    if (segSegDist(solidR[solidN], solidR[solidN + 1], solidR[e], solidR[e + 1], x0, y0, x1, y1) < r) return false;
+  for (let s = solidN; s < solidR.length; s += SEAT_SOLID * 3) {   // (each seat log: a capsule, its ends its first and last circle)
+    const e = s + (SEAT_SOLID - 1) * 3, r = solidR[e + 2];
+    if (segSegDist(solidR[s], solidR[s + 1], solidR[e], solidR[e + 1], x0, y0, x1, y1) < r) return false;
   }
   return true;
 }
@@ -5719,8 +5724,8 @@ function outOfRocks(x, y, fromX, fromY) {
     const a = d > 1e-6 ? 1 / d : 0;
     x = cx + (a ? dx * a : 1) * most; y = cy + (a ? dy * a : 0) * most;
   }
-  if (solidR.length > solidN) {                            // (the seat log, one capsule: pushed out straight from its line, so it slides along it)
-    const e = solidR.length - 3, ax = solidR[solidN], ay = solidR[solidN + 1], bx = solidR[e], by = solidR[e + 1];
+  for (let s = solidN; s < solidR.length; s += SEAT_SOLID * 3) {   // (each seat log, one capsule: pushed out straight from its line, so it slides along it)
+    const e = s + (SEAT_SOLID - 1) * 3, ax = solidR[s], ay = solidR[s + 1], bx = solidR[e], by = solidR[e + 1];
     const dx = bx - ax, dy = by - ay, L = dx * dx + dy * dy || 1;
     const t = clamp(((x - ax) * dx + (y - ay) * dy) / L, 0, 1), cx = ax + dx * t, cy = ay + dy * t;
     const ox = x - cx, oy = y - cy, d = Math.hypot(ox, oy);
@@ -5937,7 +5942,9 @@ function foragerTo(w, x, y) {
       if (d < bd) { bd = d; best = ty * W + tx; }
     }
     if (best < 0) return null;
+    const kx = x, ky = y;
     goal = best; x = best % W + 0.5; y = ((best / W) | 0) + 0.5;
+    if (pastRocks(x, y, kx, ky)) { x = kx; y = ky; }      // (the point itself is clear, its tile's middle isn't, as just in front of a seat log: there, from the tile beside)
   }
   const tiles = tilePath(w, idx(f.x, f.y), goal), last = tiles.length - 1;
   if (tiles[last] !== goal) { x = tiles[last] % W + 0.5; y = ((tiles[last] / W) | 0) + 0.5; }   // (cut off: as near as it gets)
@@ -6354,6 +6361,7 @@ function bodyTick(w) {
   if (f.hand) {
     if (f.handHeat > 0 && !near) f.handHeat = Math.max(0, f.handHeat - HAND_COOL * (WET_RAIN[kind] && !roof ? 1.5 : 1));
     if (sprint) f.handFull = Math.max(HAND_LEAST, f.handFull - HAND_SLOP);
+    if (f.hand === 'pot') potCarried(w, sprint, f.stumble === STUMBLE_TICKS);
     if (f.stumble === STUMBLE_TICKS && f.handHeat > HAND_HOT) {   // (tripping with a hot dish: it's dropped)
       emit(w, { type: 'spill', id: f.hand, x: f.x, y: f.y, heading: f.heading });
       f.hand = ''; f.handHeat = 0; f.handFull = 0;
@@ -6365,6 +6373,8 @@ function bodyTick(w) {
   if (f.warmth > WARMTH_STAGES[1] && f.tummy >= HUNGRY && f.health < 1) f.health = Math.min(1, f.health + HEALTH_MEND * (curled ? 2 : 1));
   if (f.warmth <= 0 || f.health <= 0) {                 // collapsed
     f.down = w.tick; f.walking = false; f.running = false; f.sneaking = false; f.speed = 0; f.path.length = 0; f.stumble = 0;
+    if (f.hand === 'pot') potFalls(w);
+    if (f.hand === 'board') boardBack(w);
     emit(w, { type: 'collapse' });
   }
 }
@@ -6376,7 +6386,9 @@ function wakeForager(w) {
   f.walking = false; f.running = false; f.sneaking = false; f.speed = 0; f.path.length = 0; f.rest = 0;
   f.warmth = WAKE_WARMTH; f.wet = 0; f.stamina = 1; f.winded = false; f.stumble = 0; f.down = -1;
   f.tummy = Math.max(f.tummy, WAKE_TUMMY); f.warmIn = 0; f.health = Math.max(f.health, WAKE_HEALTH);
-  f.bag.fill(''); f.bagN.fill(0); f.hand = '';
+  if (f.hand === 'pot') potFalls(w);
+  if (f.hand === 'board') boardBack(w);
+  f.bag.fill(''); f.bagN.fill(0); f.bagUse.fill(0); f.hand = '';
   emit(w, { type: 'woke' });
 }
 
@@ -6403,7 +6415,8 @@ const SKILLS = {
   // Fish landed (game.js landFish; one that gets away in the bar counts a little, FISH_MISS_PRACTICE). Each level the bar's
   // catch zone is 4% taller and the meter drains 5% slower (game.js reelFrame), and from level 3 a perch or trout bites a
   // little more often (fishKind, PRIZE_FROM).
-  fishing: { name: 'Fishing', per: 3, perks: { zone: 0.04, calm: 0.05 }, line: 'A wider catch, and the fish slip away slower' },
+  // And from level 1 the rod wears 4% less a level (care: wear), so it lasts about 60 catches new and nearer 100 at the top.
+  fishing: { name: 'Fishing', per: 3, perks: { zone: 0.04, calm: 0.05, care: 0.04 }, line: 'A wider catch, the fish slip away slower, and the rod lasts longer' },
 };
 const GROUND_PRACTICE = 0.25;
 const GATHER_PRACTICE = 0.4;            // practice for each thing that goes in the satchel (a pick of three is 1.2)
@@ -6527,8 +6540,14 @@ function lightFire(w, F) {
 // skill quickens it (null: ticks is already how long it takes, a friend's pot as its cook had it).
 const cookTicks = secs => Math.max(1, Math.round(secs * TPD / 720));
 const cookReady = F => F.cookDish !== '' && F.cookLeft <= 0;
-function cookOn(w, F, dish, items, ticks, by = w.forager) {
+function cookOn(w, F, dish, items, ticks, by = w.forager, inPot = false, chopped = 0) {
   if (F.cookDish !== '' || !F.lit) return false;
+  const P = inPot ? potOn(w, F) : null;
+  if (inPot && (!P || P.water < POT_LEAST)) return false;   // (in the pot: its water, as it's warmed so far)
+  if (P) {
+    P.dish = dish; P.boiled = P.heat; P.chopped = chopped; P.burnt = 0; P.thingsN = Math.min(P.things.length, items.length);
+    for (let k = 0; k < P.things.length; k++) P.things[k] = k < P.thingsN ? items[k] : '';
+  }
   F.cookDish = dish; F.cookItems = items.slice(); F.cookLeft = F.cookTotal = Math.max(1, Math.round(ticks / (by ? perk(by, 'cooking', 'speed') : 1)));
   emit(w, { type: 'cookon', fire: F });
   return true;
@@ -6536,8 +6555,12 @@ function cookOn(w, F, dish, items, ticks, by = w.forager) {
 // The dish out of a done pot (its name), the pot empty; '' if it isn't done.
 function cookTake(w, F) {
   if (!cookReady(F)) return '';
-  const dish = F.cookDish;
+  const dish = F.cookDish, P = potOn(w, F);
   F.cookDish = ''; F.cookItems = []; F.cookLeft = F.cookTotal = 0;
+  if (P && P.dish) {                                    // (out of the pot: its water was the dish)
+    P.dish = ''; P.water = 0; P.thingsN = 0; P.things.fill('');
+    P.boiled = 0; P.chopped = 0; P.stirred = 0; P.burnt = 0;
+  }
   return dish;
 }
 // How far along it is, 0 to 1 (1 done, 0 with nothing in the pot).
@@ -6547,9 +6570,10 @@ const cookProgress = F => (F.cookDish === '' ? 0 : F.cookTotal > 0 ? 1 - F.cookL
 // one puts it out.
 function fireTick(w) {
   const wet = FIRE_WET[w.weather.kind] || 1, look = w.tick % FIRE_LOOK === 0;
-  for (const F of w.fires) {
+  for (let i = 0; i < w.fires.length; i++) {
+    const F = w.fires[i];
     if (F.lit) {
-      if (F.cookLeft > 0 && --F.cookLeft === 0) emit(w, { type: 'cooked', fire: F });
+      if (F.cookLeft > 0 && (!w.pots.length || potCooks(w, i)) && --F.cookLeft === 0) emit(w, { type: 'cooked', fire: F });
       F.fuel -= wet;
       F.ash = Math.min(1, F.ash + wet / (6 * FIRE_STICK));
       if (F.fuel <= 0) { F.fuel = 0; F.lit = false; F.embers = FIRE_EMBERS; emit(w, { type: 'fireout', fire: F }); }
@@ -6689,6 +6713,7 @@ function shapeVessel(w, id, F, ticks) {
 function makeVessel(w, id, F) {
   if (F.own.includes(id)) return false;
   F.own.push(id);
+  if (id === 'pot') potsOwed(w);
   return true;
 }
 function kitTick(w) {
@@ -6699,7 +6724,154 @@ function kitTick(w) {
   if (!lit || --k.left > 0) return;
   const id = k.firing;
   lit.own.push(id); k.firing = ''; k.left = 0; k.total = 0;
+  if (id === 'pot') potsOwed(w);
   emit(w, { type: 'fired', what: id });
+}
+
+// ---------------------------------------------------------------- the pot
+//
+// The clay pot is a thing in the meadow (PLAN.md stage 12), not a slot at a fire. Made at a fire (makeVessel, kitTick: 'pot'
+// in its F.own) it sits on that fire, and from there it's carried in both hands (f.hand 'pot': takePot), set down on the
+// ground (setPot) or on a fire (potOnFire), and filled at the water a scoop at a time (fillPot). On a lit fire its water warms
+// (potsTick: towards the fire's fireHeat, slower the fuller it is) through steaming and a simmer to a rolling boil
+// (POT_STEAM, POT_SIMMER, POT_ROLL), so a boil needs the fire kept up; off one it cools. Simmering its water goes down, at a
+// rolling boil quickest (POT_BOIL_OFF), and boiled dry with a dish in it, it catches (burnt, event 'potcatch'). Sprinting
+// with it slops some out (POT_SLOP), a stumble more (POT_TRIP). A dish put in it (cookOn with inPot) cooks only while it
+// simmers (fireTick: potCooks), and taken out (cookTake) it was the water: the pot's dry again. One pot for each fire that
+// made one (potsOwed). No random numbers. A meadow kept before pots gets one on each fire that made one, empty
+// (unpackWorld), no KEEP_VERSION bump (w.pots is in LATER).
+const POT_EVERY = 10;                   // ticks between its looks
+const POT_WARM = TPD / 24;              // ticks a full pot takes from cold to a rolling boil on a fed fire (30 s at 1x); an empty one a third of that
+const POT_COOL = TPD / 8;               // and off the fire, from a boil to cold (a minute and a half at 1x)
+const POT_STEAM = 0.3, POT_SIMMER = 0.6, POT_ROLL = 0.92;   // as hot as it steams, simmers (a dish cooks), and rolls
+const POT_BOIL_OFF = TPD / 3;           // ticks a rolling boil takes to boil a full pot dry (4 min at 1x); a simmer, three times that
+const POT_SCOOP = 0.34;                 // a scoop at the water's edge: three fill it
+const POT_LEAST = 0.3;                  // the water a dish in it wants
+const POT_SLOP = 0.35 / SPRINT_TICKS;   // a tick of sprinting with it full: a whole sprint slops a third out (less as it empties)
+const POT_TRIP = 0.25;                  // and a stumble with it
+// Every field a pot ever has: where it is (x, y), the fire it's on (an index into w.fires, -1 for none), who holds it (0 the
+// forager, -1 nobody), how much water is in it (0 to 1) and how hot that is (0 cold to 1 a rolling boil). And for the steps
+// to come (PLAN.md stage 12): what went in (things, thingsN, as the dish cooking on its fire had it), how well each step went
+// (boiled: how hot it was as they went in; chopped, stirred: 0 to 1; burnt: 1 once it caught), and the dish cooking in it
+// ('' for none).
+const potOf = (x, y) => ({ pot: true, x, y, fire: -1, held: -1, water: -0, heat: -0, things: ['', '', '', ''], thingsN: 0,
+  boiled: -0, chopped: -0, stirred: -0, burnt: -0, dish: '', copper: false });
+// The sunken copper pot (PLAN.md stage 14, recipes.js TREASURES copperpot), fished up and left on the bank at x, y: a pot
+// like the clay ones, not owed to any fire (potsOwed doesn't count it), that heats COPPER_WARM times as quick.
+const COPPER_WARM = 2;
+function copperPot(w, x, y) {
+  const P = potOf(x, y);
+  P.x = x; P.y = y;                                     // (fractions from the start: one layout)
+  P.copper = true;
+  w.pots.push(P);
+  return P;
+}
+// The pot on fire F, or null.
+function potOn(w, F) {
+  const i = w.fires.indexOf(F);
+  if (i < 0) return null;
+  for (const P of w.pots) if (P.fire === i) return P;
+  return null;
+}
+// The pot in the forager's hands, or null.
+function handPot(w) {
+  if (w.forager.hand !== 'pot') return null;
+  for (const P of w.pots) if (P.held === 0) return P;
+  return null;
+}
+// A pot for each fire that made one, the new ones on the fires that made them (or the first fire that did with none on it).
+function potsOwed(w) {
+  let made = 0, clay = 0;
+  for (const F of w.fires) if (F.own.includes('pot')) made++;
+  for (const P of w.pots) if (!P.copper) clay++;
+  for (let i = 0; clay < made && i < w.fires.length; i++) {
+    const F = w.fires[i];
+    if (!F.own.includes('pot') || potOn(w, F)) continue;
+    const P = potOf(F.x, F.y);
+    P.fire = i;
+    w.pots.push(P);
+    clay++;
+  }
+}
+// Into its hands, off the ground or a fire, if they're empty: not with a dish cooking in it. '' if it took it, else why not.
+function takePot(w, P) {
+  const f = w.forager;
+  if (f.down >= 0) return 'Not now';
+  if (f.hand) return f.hand === 'pot' ? 'You\'re carrying a pot' : 'Your hands are full';
+  if (P.dish) return 'Something\'s cooking in it';
+  if (P.held >= 0) return 'Someone has it';
+  P.fire = -1; P.held = 0; P.x = f.x; P.y = f.y;
+  f.hand = 'pot'; f.handHeat = 0; f.handFull = 0;
+  return '';
+}
+// Out of its hands onto the ground at x, y. '' if it went down, else why not.
+function setPot(w, x, y) {
+  const P = handPot(w);
+  if (!P) return 'No pot in hand';
+  if (!inBounds(x, y)) return 'Too near the edge';
+  if (w.water[idx(x, y)] === DEEP && !w.frozen) return 'Not in the deep water';
+  P.held = -1; P.fire = -1; P.x = x; P.y = y;
+  w.forager.hand = '';
+  return '';
+}
+// Out of its hands onto fire F: one pot to a fire, and not over another vessel's dish cooking. '' or why not.
+function potOnFire(w, F) {
+  const P = handPot(w), i = w.fires.indexOf(F);
+  if (!P || i < 0) return 'No pot in hand';
+  if (potOn(w, F)) return 'There\'s a pot on it';
+  if (F.cookDish !== '') return 'Something\'s cooking on it';
+  P.held = -1; P.fire = i; P.x = F.x; P.y = F.y;
+  w.forager.hand = '';
+  return '';
+}
+// A scoop of water into the pot in its hands (game.js has it crouched at the water's edge): cold, so it cools what's in
+// there. Returns how full it is now (-1 with none in hand).
+function fillPot(w, n = POT_SCOOP) {
+  const P = handPot(w);
+  if (!P) return -1;
+  const was = P.water;
+  P.water = Math.min(1, was + n);
+  P.heat *= was / P.water;
+  return P.water;
+}
+// Whether a dish cooking on fire i goes on cooking this tick: one in its pot only while it simmers.
+function potCooks(w, i) {
+  for (const P of w.pots) if (P.fire === i && P.dish !== '') return P.heat >= POT_SIMMER;
+  return true;
+}
+// Every POT_EVERY ticks: each pot warms on a fire, cools off one, and simmering boils down.
+function potsTick(w, n = POT_EVERY) {
+  const f = w.forager;
+  for (const P of w.pots) {
+    const F = P.fire >= 0 ? w.fires[P.fire] : null;
+    if (P.held === 0) { P.x = f.x; P.y = f.y; }
+    const goal = F ? Math.min(1, fireHeat(F) * 1.1) : 0;
+    if (P.heat < goal) P.heat = Math.min(goal, P.heat + n * (P.copper ? COPPER_WARM : 1) / (POT_WARM * (0.33 + 0.67 * P.water)));
+    else if (P.heat > goal) P.heat = Math.max(goal, P.heat - n / POT_COOL);
+    if (P.heat >= POT_SIMMER && P.water > 0) {
+      P.water = Math.max(0, P.water - n / POT_BOIL_OFF * (P.heat >= POT_ROLL ? 1 : 1 / 3));
+      if (P.water === 0) {
+        if (P.dish && !P.burnt) { P.burnt = 1; emit(w, { type: 'potcatch', pot: P }); }
+        else if (!P.dish) emit(w, { type: 'potdry', pot: P });
+      }
+    }
+  }
+}
+// Carried a tick (bodyTick): sprinting slops some out, a stumble more.
+function potCarried(w, sprint, trip) {
+  const P = handPot(w);
+  if (!P || !(P.water > 0)) return;
+  if (sprint) P.water = Math.max(0, P.water - POT_SLOP * Math.min(1, P.water * 1.5));
+  if (trip) { P.water = Math.max(0, P.water - POT_TRIP); emit(w, { type: 'potslop', pot: P }); }
+}
+// The pot out of its hands where it stands, falling down (bodyTick's collapse): it isn't lost with the satchel.
+function potFalls(w) {
+  const P = handPot(w), f = w.forager;
+  if (P) {
+    const deep = w.water[idx(f.x, f.y)] === DEEP && !w.frozen;
+    P.held = -1; P.x = deep ? f.homeX : f.x; P.y = deep ? f.homeY : f.y;
+  }
+  if (f.hand === 'pot') f.hand = '';
 }
 
 // Lighting the meadow's first fire makes camp (w.camp: where, the fire, and the tick it was made). From then on the forager
@@ -6715,7 +6887,7 @@ const campLevel = w => (w.camp ? 1 + w.camp.raised : 0);
 const campR = w => (w.camp ? CAMP_R + 0.5 * (campLevel(w) - 1) : CAMP_R);
 const CAMP_KNEEL = 1.5;                 // the forager within this of the fire is kneeling by it: it wakes there
 function campAt(w, F) {
-  w.camp = { x: F.x, y: F.y, fire: F, made: w.tick, basket: null, seat: null, rack: null, lean: null,
+  w.camp = { x: F.x, y: F.y, fire: F, made: w.tick, basket: null, seat: null, rack: null, lean: null, block: null,
     deeds: [], cosy: 0, raised: 0, dishes: [], duskLit: false, stormLit: false };
   earnDeed(w, 'camp');
   clearCamp(w);
@@ -6865,7 +7037,7 @@ function clearCamp(w) {
 // topped up with empty slots along the end there).
 const BASKET_SLOTS = 32;
 const BASKET_GAP = 1.1;                 // tiles it keeps from a fire, a trunk or a rock
-const basketOf = (x, y, made) => ({ basket: true, kept: 1, x, y, made, bag: new Array(BASKET_SLOTS).fill(''), bagN: new Array(BASKET_SLOTS).fill(0) });
+const basketOf = (x, y, made) => ({ basket: true, kept: 1, x, y, made, bag: new Array(BASKET_SLOTS).fill(''), bagN: new Array(BASKET_SLOTS).fill(0), bagUse: new Array(BASKET_SLOTS).fill(0) });
 // Why a camp build can't go at x, y ('' if it can): inside the camp's ring, clear of the water, the fire, the basket, the
 // seat log, a torch, the other camp builds, rocks, trunks, brambles and burrows, in the basket's voice. `gap` is how much
 // room its own middle keeps from what stands about it, and `near` how far a point is from its shape (the seat log's line,
@@ -6883,6 +7055,7 @@ function campSpot(w, x, y, id, gap = CAMP_GAP, near = null) {
   for (const T of w.torches) if (at(T.x, T.y) < gap) return 'A torch is here';
   for (const K of w.racks) if (inCamp(w, K.x, K.y) && at(K.x, K.y) < gap) return 'The drying rack\'s here';
   if (id !== 'lean' && w.camp.lean && at(w.camp.lean.x, w.camp.lean.y) < gap) return 'The lean-to\'s here';
+  if (id !== 'block' && w.camp.block && at(w.camp.block.x, w.camp.block.y) < gap * 0.8) return `The ${blockName(w.camp.block)}'s here`;
   rocksFor(w);
   for (let k = 0; k < solidR.length; k += 3) if (at(solidR[k], solidR[k + 1]) < solidR[k + 2] + gap * 0.4) return 'A rock\'s in the way';
   let trunk = false;
@@ -6906,40 +7079,55 @@ function makeBasket(w, x, y) {
   emit(w, { type: 'basket', basket: w.camp.basket });
   return w.camp.basket;
 }
-// The camp's seat log (w.camp.seat, null till it's made): a felled log by the fire to sit on (recipes.js BUILDS.seat, which
-// game.js spends). It lies a little turned, its right end nearer (SEAT_TILT), and it's solid: a row of SEAT_SOLID circles
-// along it in rocksFor, so the forager walks round it; game.js sits it on it from just in front (SEAT_OUT, sitFrame). One
-// each, and no random numbers; w.camp is in LATER, so a camp kept before it gets seat: null in unpackWorld.
+// The seat logs (w.seats, as many as you like, anywhere: none at first): a felled log to sit on (recipes.js BUILDS.seat, which
+// game.js spends). It faces one of four ways (SEAT_FACES: you, left, away, right), and it's solid: a row of SEAT_SOLID circles
+// along it in rocksFor, so the forager walks round it; game.js sits it on it from just in front (SEAT_OUT, sitFrame). No random
+// numbers; a kept camp's one seat (w.camp.seat) moves into w.seats in unpackWorld, and a meadow kept before gets [].
 const SEAT_HALF = 0.72;                 // tiles from its middle to either end
-const SEAT_TILT = 0.12;                 // how far it's turned, its right end toward you (radians, on the ground)
+const SEAT_LEAN = 0.35, SEAT_ALONG = 0.5;   // facing left or right it runs up the meadow, drawn three-quarter (game.js SEAT_KX, SEAT_KY): its far end this far to the right and up a tile of it
 const SEAT_DEEP = 0.2;                  // tiles from its line to its side, on the ground
 const SEAT_SOLID = 5;                   // circles along it that the forager can't step into
 const SEAT_OUT = SEAT_DEEP + FORAGER_GIRTH + 0.04;   // tiles in front of its line where it sits down from
-const seatOf = (x, y, made, turn) => ({ seat: true, x, y, made, turn: turn || -0 });   // (turn: its angle in radians; -0 so a whole 0 keeps the fraction layout)
-// Its two ends, into seatAx, seatAy, seatBx, seatBy (left, then right).
+const SEAT_FACES = [-0, Math.PI / 2, Math.PI, -Math.PI / 2];   // its four facings (game.js seatFace): facing you, left, away, right
+// The facing nearest a turn (radians): a seat kept or sent from when it turned in 15° steps (none past 45°) faces you.
+const seatFaceOf = t => Math.abs(t) <= Math.PI / 4 + 1e-6 ? 0 : (Math.round(t / (Math.PI / 2)) % 4 + 4) % 4;
+const seatOf = (x, y, made, turn) => ({ seat: true, x, y, made, turn: SEAT_FACES[seatFaceOf(turn || 0)] });   // (turn: its angle in radians, one of SEAT_FACES; -0 so a whole 0 keeps the fraction layout)
+// Its two ends, into seatAx, seatAy, seatBx, seatBy (left, then right; up the meadow, its far end, then its near).
 let seatAx = 0, seatAy = 0, seatBx = 0, seatBy = 0;
 function seatEnds(Q) {
+  if (Math.abs(Math.sin(Q.turn)) > 0.5) {                  // (facing left or right: up the meadow, leaning as it's drawn)
+    const c = SEAT_HALF * SEAT_LEAN, s = SEAT_HALF * SEAT_ALONG;
+    seatAx = Q.x + c; seatAy = Q.y - s; seatBx = Q.x - c; seatBy = Q.y + s;
+    return;
+  }
   const c = Math.cos(Q.turn) * SEAT_HALF, s = Math.sin(Q.turn) * SEAT_HALF;
   seatAx = Q.x - c; seatAy = Q.y - s; seatBx = Q.x + c; seatBy = Q.y + s;
 }
 // How far x, y is from the seat log's line (Infinity: there's none).
 function seatNear(w, x, y) {
-  const Q = w.camp && w.camp.seat;
-  if (!Q) return Infinity;
-  seatEnds(Q);
-  return segDist(x, y, seatAx, seatAy, seatBx, seatBy);
+  let best = Infinity;
+  for (const Q of w.seats) {
+    seatEnds(Q);
+    const d = segDist(x, y, seatAx, seatAy, seatBx, seatBy);
+    if (d < best) best = d;
+  }
+  return best;
 }
-function seatSpot(w, x, y, turn = SEAT_TILT) {
-  if (!w.camp) return 'Make camp first';
-  if (w.camp.seat) return 'There\'s a seat at camp';
-  if (!inCamp(w, x, y)) return 'Inside the camp';
-  const i = idx(x, y);
-  if (w.water[i]) return 'Not in the water';
+function seatSpot(w, x, y, turn = 0) {
+  if (!inBounds(x, y) || x < 2 || y < 2 || x > W - 2 || y > H - 2) return 'Too near the edge';
   seatEnds({ x, y, turn });
   const ax = seatAx, ay = seatAy, bx = seatBx, by = seatBy, near = (px, py) => segDist(px, py, ax, ay, bx, by);
+  for (let k = 0; k < 5; k++) {                              // (not in the water: along its length)
+    const px = lerp(ax, bx, k / 4), py = lerp(ay, by, k / 4);
+    if (!inBounds(px, py) || w.water[idx(px, py)]) return 'Not in the water';
+  }
+  for (let k = 0; k < 5; k++) if (seatNear(w, lerp(ax, bx, k / 4), lerp(ay, by, k / 4)) < 0.55) return 'The seat\'s here';
+  for (const K of w.racks) if (near(K.x, K.y) < 1.0) return 'The drying rack\'s here';
+  if (w.camp && w.camp.lean && near(w.camp.lean.x, w.camp.lean.y) < 1.0) return 'The lean-to\'s here';
   for (const F of w.fires) if (near(F.x, F.y) < 1.0) return 'Too near the fire';
-  if (w.camp.basket && near(w.camp.basket.x, w.camp.basket.y) < 0.95) return 'The basket\'s here';
+  if (w.camp && w.camp.basket && near(w.camp.basket.x, w.camp.basket.y) < 0.95) return 'The basket\'s here';
   for (const T of w.torches) if (near(T.x, T.y) < 0.65) return 'A torch is here';
+  if (w.camp && w.camp.block && near(w.camp.block.x, w.camp.block.y) < 0.8) return `The ${blockName(w.camp.block)}'s here`;
   rocksFor(w);
   for (let k = 0; k < solidR.length; k += 3) if (near(solidR[k], solidR[k + 1]) < solidR[k + 2] + 0.05) return 'A rock\'s in the way';
   let trunk = false;
@@ -6950,13 +7138,13 @@ function seatSpot(w, x, y, turn = SEAT_TILT) {
   return '';
 }
 // Sets it down at x, y (game.js has taken what it takes out of the satchel; a friend's is only set down). Returns it.
-function makeSeat(w, x, y, turn = SEAT_TILT) {
-  if (!w.camp || w.camp.seat) return null;
-  w.camp.seat = seatOf(x, y, w.tick, turn);
+function makeSeat(w, x, y, turn = 0) {
+  const Q = seatOf(x, y, w.tick, turn);
+  w.seats.push(Q);
   earnDeed(w, 'seat');
   solidW = null;                                          // (it's in the way now: rocksFor again)
-  emit(w, { type: 'seat', seat: w.camp.seat });
-  return w.camp.seat;
+  emit(w, { type: 'seat', seat: Q });
+  return Q;
 }
 // The drying racks (w.racks): each is two A-frames of crossed poles and a bar with a hook for each
 // slot, what it holds hung from them (game.js drawRack), set down anywhere once there's a camp (recipes.js BUILDS.rack, which game.js spends). Each is a second store
@@ -6964,7 +7152,7 @@ function makeSeat(w, x, y, turn = SEAT_TILT) {
 // (stackOf). Scenery you walk through, like the basket; as many as you like, and no random numbers. w.racks is created in createWorld.
 const RACK_SLOTS = 6;                   // one row of hooks, a slot to a hook (game.js RACK_HOOKS)
 const RACK_KEEP = 4;                    // what a slot holds, times a basket's
-const rackOf = (x, y, made) => ({ rack: true, kept: RACK_KEEP, x, y, made, bag: new Array(RACK_SLOTS).fill(''), bagN: new Array(RACK_SLOTS).fill(0),
+const rackOf = (x, y, made) => ({ rack: true, kept: RACK_KEEP, x, y, made, bag: new Array(RACK_SLOTS).fill(''), bagN: new Array(RACK_SLOTS).fill(0), bagUse: new Array(RACK_SLOTS).fill(0),
   dry: new Array(RACK_SLOTS).fill(-0), dryOf: new Array(RACK_SLOTS).fill(''), dryN: new Array(RACK_SLOTS).fill(0) });   // (how far each slot has dried: rackTick)
 // Why a drying rack can't go at x, y ('' if it can): not in the water, clear of the fire, the basket, the seat log, the
 // lean-to, other racks, rocks, trunks, brambles and burrows.
@@ -6979,6 +7167,7 @@ function rackSpot(w, x, y, gap = CAMP_GAP) {
   for (const T of w.torches) if (at(T.x, T.y) < gap) return 'A torch is here';
   for (const K of w.racks) if (at(K.x, K.y) < gap) return 'The drying rack\'s here';
   if (w.camp.lean && at(w.camp.lean.x, w.camp.lean.y) < gap) return 'The lean-to\'s here';
+  if (w.camp.block && at(w.camp.block.x, w.camp.block.y) < gap * 0.8) return `The ${blockName(w.camp.block)}'s here`;
   rocksFor(w);
   for (let k = 0; k < solidR.length; k += 3) if (at(solidR[k], solidR[k + 1]) < solidR[k + 2] + gap * 0.4) return 'A rock\'s in the way';
   let trunk = false;
@@ -7061,19 +7250,92 @@ function makeLean(w, x, y) {
   emit(w, { type: 'lean', lean: L });
   return L;
 }
+// The camp's chopping block (w.camp.block, null till it's made; recipes.js BUILDS.block, which game.js spends): a sawn
+// round with a board on it, where things are got ready for the pot (PLAN.md stage 12). A thing out of the satchel is laid
+// on it (blockLay: `on`, the taps it wants in `need`, recipes.js prepOf), chopped a tap at a time (blockChop: `cuts`), and
+// done it's on the board: the block's bag and bagN, a store of BOARD_MOST things, so the pot takes them as it takes the
+// basket's (held back till Cook, spent then: game.js). It isn't in worldStores: the board is carried to the pot in both
+// hands (f.hand 'board', takeBoard; held 0) and its things tipped in there, then it's back on the block (boardBack, as a
+// fall does). Scenery you walk through, like the basket. One at camp, no random numbers; w.camp is in LATER, so a camp
+// kept before it gets block: null in unpackWorld.
+const BOARD_MOST = 4;                   // things on the board, and on the block being chopped, at once: the pot's slots
+// It's now what things are cut on at the fire (game.js, the board at the fire): kind 'log' (recipes.js BUILDS.cutlog) or
+// 'stone' (BUILDS.cutstone), one of them, close by the camp's fire (BLOCK_NEAR). A block made before is a log.
+const blockOf = (x, y, made, kind) => ({ block: true, kept: 1, x, y, made, kind, bag: new Array(BOARD_MOST).fill(''), bagN: new Array(BOARD_MOST).fill(0), bagUse: new Array(BOARD_MOST).fill(0),
+  on: '', cuts: 0, need: 0, held: -1 });
+const BLOCK_NEAR = [0.7, 1.7];          // tiles from the camp's fire it lies, at least and at most (things are cut by the pot)
+const BLOCK_NAMES = { log: 'cutting log', stone: 'cutting stone' };
+const blockName = B => BLOCK_NAMES[B.kind] || 'cutting log';
+// Why the cutting log or stone can't go at x, y ('' if it can).
+function blockSpot(w, x, y) {
+  if (!w.camp) return 'Make camp first';
+  if (w.camp.block) return `There's a ${blockName(w.camp.block)} at camp`;
+  const F = w.camp.fire, d = F ? Math.hypot(x - F.x, y - F.y) : 0;
+  if (F && d > BLOCK_NEAR[1]) return 'Closer to the fire';
+  if (F && d < BLOCK_NEAR[0]) return 'Too close to the fire';
+  return campSpot(w, x, y, 'block', CAMP_GAP * 0.8);
+}
+// Sets it down at x, y (game.js has taken what it takes out of the satchel; a friend's is only set down). Returns it.
+function makeBlock(w, x, y, kind = 'log') {
+  if (!w.camp || w.camp.block) return null;
+  const B = w.camp.block = blockOf(x, y, w.tick, kind);
+  emit(w, { type: 'block', block: B });
+  return B;
+}
+// How many things are on the board.
+function boardCount(B) { let n = 0; for (let k = 0; k < B.bagN.length; k++) n += B.bagN[k]; return n; }
+// One of id out of the satchel onto the block, to be chopped in `cuts` taps. '' if it's laid there, else why not.
+function blockLay(w, id, cuts) {
+  const B = w.camp && w.camp.block, f = w.forager;
+  if (!B) return 'No chopping block';
+  if (B.held >= 0) return 'The board\'s away';
+  if (B.on) return 'Finish that one first';
+  if (boardCount(B) >= BOARD_MOST) return 'The board\'s full: take it to the pot';
+  if (!(cuts > 0)) return 'That goes in whole';
+  if (!storeTake(f, id, 1)) return 'None left';
+  B.on = id; B.cuts = 0; B.need = cuts | 0;
+  return '';
+}
+// One tap of the knife on what's on the block: 1 once that's done it and it's on the board, 0 for a cut, -1 for nothing.
+function blockChop(w) {
+  const B = w.camp && w.camp.block;
+  if (!B || !B.on || B.held >= 0) return -1;
+  if (++B.cuts < B.need) return 0;
+  storePut(B, B.on, 1);
+  B.on = ''; B.cuts = 0; B.need = 0;
+  return 1;
+}
+// The board up off the block into its hands, if they're empty and there's something on it. '' or why not.
+function takeBoard(w) {
+  const B = w.camp && w.camp.block, f = w.forager;
+  if (!B) return 'No chopping block';
+  if (f.down >= 0) return 'Not now';
+  if (f.hand) return f.hand === 'board' ? 'You\'ve the board' : 'Your hands are full';
+  if (B.held >= 0) return 'The board\'s away';
+  if (!boardCount(B)) return 'Nothing on the board yet';
+  B.held = 0;
+  f.hand = 'board'; f.handHeat = 0; f.handFull = 0;
+  return '';
+}
+// The board out of its hands, back on the block (tipped into the pot, put back, or dropped in a fall).
+function boardBack(w) {
+  const B = w.camp && w.camp.block, f = w.forager;
+  if (B) B.held = -1;
+  if (f && f.hand === 'board') f.hand = '';
+}
 // Moves what's in slot a of A (the satchel, w.forager, or the basket: anything with bag and bagN) to slot b of B: onto
 // B's stack if it's the same kind (what doesn't fit stays), into it if it's empty, else the two swap. Returns how many went.
 function moveBetween(A, a, B, b) {
   const id = A.bag[a];
   if (!id || (A === B && a === b)) return 0;
-  if (B.bag[b] === id) {
+  if (B.bag[b] === id && !usesOf(id)) {                  // (two tools of a kind don't pile: they swap, below)
     const m = Math.min(A.bagN[a], stackOf(id, B) - B.bagN[b]);
     B.bagN[b] += m; A.bagN[a] -= m;
     if (!A.bagN[a]) A.bag[a] = '';
     return m;
   }
-  const bid = B.bag[b], bn = B.bagN[b], n = A.bagN[a];
-  B.bag[b] = id; B.bagN[b] = n; A.bag[a] = bid; A.bagN[a] = bn;
+  const bid = B.bag[b], bn = B.bagN[b], bu = B.bagUse[b], n = A.bagN[a];
+  B.bag[b] = id; B.bagN[b] = n; B.bagUse[b] = A.bagUse[a]; A.bag[a] = bid; A.bagN[a] = bn; A.bagUse[a] = bu;
   return n;
 }
 // Moves slot a of A into B wherever it goes: onto B's stacks of its kind first, then its first empty slots. Returns how many
@@ -7084,9 +7346,10 @@ function moveInto(A, a, B) {
   for (let pass = 0; pass < 2 && A.bagN[a] > 0; pass++) for (let k = 0; k < B.bag.length && A.bagN[a] > 0; k++) {
     if (pass === 0 ? B.bag[k] !== id || B.bagN[k] >= stackOf(id, B) : B.bag[k] !== '') continue;
     const m = Math.min(A.bagN[a], stackOf(id, B) - B.bagN[k]);
+    if (B.bag[k] === '') B.bagUse[k] = A.bagUse[a];     // (a tool's wear goes with it: it only ever goes to an empty slot)
     B.bag[k] = id; B.bagN[k] += m; A.bagN[a] -= m; moved += m;
   }
-  if (!A.bagN[a]) A.bag[a] = '';
+  if (!A.bagN[a]) { A.bag[a] = ''; A.bagUse[a] = 0; }
   return moved;
 }
 // Everything in the satchel into a store (the basket by default), as far as it goes. Returns how many went.
@@ -7187,8 +7450,8 @@ function whatThere(w, kind, it) {
 
 // ---------------------------------------------------------------- stores
 //
-// A store is anything that keeps things: two rows, `bag` (what's in each slot) and `bagN` (how many), and nothing else is
-// needed of it. The satchel (w.forager) is one, the camp's basket (w.camp.basket) another, and a larder, a drying rack or a
+// A store is anything that keeps things: three rows, `bag` (what's in each slot), `bagN` (how many) and `bagUse` (the uses
+// a tool in it has had: wear), and nothing else is needed of it. The satchel (w.forager) is one, the camp's basket (w.camp.basket) another, and a larder, a drying rack or a
 // cellar to come is one more in worldStores: everything that takes things out of a satchel asks storesAt or spends with
 // storesTake, so a new store works everywhere at once. The satchel's own helpers (roomFor, stow, bagCount, spend) are
 // these, on it.
@@ -7206,12 +7469,13 @@ function storeRoom(S, id) {
   return n;
 }
 // Puts n of id in it: onto its stacks first, then the first empty slots. Returns the slots it went in (for game.js to fly
-// them to).
-function storePut(S, id, n) {
+// them to). use: the wear of a tool put in (a gift's; 0 new).
+function storePut(S, id, n, use = 0) {
   const into = [];
   for (let pass = 0; pass < 2 && n > 0; pass++) for (let k = 0; k < S.bag.length && n > 0; k++) {
     if (pass === 0 ? S.bag[k] !== id || S.bagN[k] >= stackOf(id, S) : S.bag[k] !== '') continue;
     const m = Math.min(n, stackOf(id, S) - S.bagN[k]);
+    if (S.bag[k] === '') S.bagUse[k] = use;
     S.bag[k] = id; S.bagN[k] += m; n -= m; into.push(k);
   }
   return into;
@@ -7225,7 +7489,7 @@ function storeTake(S, id, n) {
     if (k < 0) break;
     const m = Math.min(n - took, S.bagN[k]);
     S.bagN[k] -= m; took += m;
-    if (!S.bagN[k]) S.bag[k] = '';
+    if (!S.bagN[k]) { S.bag[k] = ''; S.bagUse[k] = 0; }
   }
   return took;
 }
@@ -7274,18 +7538,54 @@ function storesTake(stores, id, n) {
   return took;
 }
 // Puts n of id in the first of them with room (the satchel before the basket): { store, into }, or null with none holding it.
-function storesPut(stores, id, n) {
+function storesPut(stores, id, n, use = 0) {
   for (const S of stores) {
     if (!storeRoom(S, id)) continue;
-    const into = storePut(S, id, n);
+    const into = storePut(S, id, n, use);
     if (into.length) return { store: S, into };
   }
   return null;
 }
 // The satchel's own: the stores above, on it.
 const roomFor = (f, id) => storeRoom(f, id);
-const stow = (f, id, n) => storePut(f, id, n);
+const stow = (f, id, n, use = 0) => storePut(f, id, n, use);
+// Takes one out of slot k (a gift, a tool snapped): its wear goes when the slot empties.
+function takeOne(S, k) {
+  if (!S.bag[k]) return;
+  if (!--S.bagN[k]) { S.bag[k] = ''; S.bagUse[k] = 0; }
+}
 const bagCount = (f, id) => storeCount(f, id);
+// Tools that wear (PLAN.md stage 14): an ingredient with uses (recipes.js, tagged 'tool': the rod) is used up a little at a
+// time, the tool's own code saying what a thing costs (game.js: the rod's catch landed 1, a fish lost in the bar 2). Its
+// wear is bagUse in the slot it's in, carried with it wherever it goes (the basket, the ground, a gift); at its uses it's
+// done, and game.js snaps it once the thing that used it up is over (snapTool). Mending puts it back to new (mendTool, for
+// recipes.js mend). Nothing here draws the meadow's random numbers.
+// n uses off the tool in slot k of the satchel: fewer by the level of skill s (its 'care' perk), the part of one rounded up
+// or down on a hash of the tick, so it's steady and whole. Returns the uses it has left (0 or less: worn out).
+function wear(w, f, k, n, s) {
+  const id = f.bag[k], all = usesOf(id);
+  if (!all) return 0;
+  let m = n * (s && SKILLS[s].perks.care ? Math.max(0, 2 - perk(f, s, 'care')) : 1);
+  const whole = Math.floor(m);
+  m = whole + (hash2(f.bagUse[k], w.tick, w.seed) < m - whole ? 1 : 0);
+  f.bagUse[k] = Math.min(all, f.bagUse[k] + m);
+  return all - f.bagUse[k];
+}
+// Uses left of what's in slot k of a store (0 for what isn't a tool).
+const usesLeft = (S, k) => usesOf(S.bag[k]) ? usesOf(S.bag[k]) - S.bagUse[k] : 0;
+// The tool in slot k of the satchel breaks: gone from the slot, and a stick of it at the forager's feet (on the ground,
+// as dropSlot leaves a thing). Returns the stick (for game.js to tell friends), or null.
+function snapTool(w, k) {
+  const f = w.forager;
+  if (!usesOf(f.bag[k])) return null;
+  takeOne(f, k);
+  const until = w.tick + Math.round(DROP_DAYS * TPD);
+  let x = f.x + 0.35, y = f.y + 0.3;
+  if (!walkable(w, x, y)) { x = f.x; y = f.y; }
+  return dropAt(w, 'stick', x, y, 1, w.tick, until);
+}
+// Back to new.
+function mendTool(S, k) { if (usesOf(S.bag[k])) S.bagUse[k] = 0; }
 // Eats one of what's in slot k: fill (recipes.js: how much it fills, game.js reads it) into the tummy, and a warm dish's
 // warmth. Returns '' if it ate, else why not in a few words (game.js says it).
 function feedForager(w, k, fill, warm) {
@@ -7345,33 +7645,34 @@ function eachPickable(w, fn) {
 
 // What the forager drops out of the satchel lies on the ground where it stood (w.dropped, one layout, dropOf), to be
 // picked up again ('dropped' to whatThere and gather), and is gone after DROP_DAYS (sooner if the water comes over it).
-// Dropped on a pile of its own kind it goes on the pile. kind: an ingredient id; born, until: ticks; n: how many.
+// Dropped on a pile of its own kind it goes on the pile, but a tool never piles (each keeps its wear). kind: an ingredient
+// id; born, until: ticks; n: how many; use: a tool's wear (bagUse).
 const DROP_DAYS = 3;                    // a day is 12 minutes at 1x: thirty-six minutes
 const DROP_EVERY = TPD / 720;           // ticks between looks for ones gone (two minutes; a second at 1x)
 const DROP_PILE = 0.6;                  // tiles from a pile of its kind that one dropped goes on it
-const dropOf = (kind, x, y, born, until, n) => ({ dropped: true, kind, x, y, born, until, n });
+const dropOf = (kind, x, y, born, until, n, use = 0) => ({ dropped: true, kind, x, y, born, until, n, use });
 // Empties slot k onto the ground just in front of the forager, each one a little along from the last so they don't land on each other.
 // Returns what's on the ground now (the pile it went on, or a new one), or null with nothing in the slot.
 function dropSlot(w, k) {
-  const f = w.forager, kind = f.bag[k], n = f.bagN[k];
-  f.bag[k] = ''; f.bagN[k] = 0;
+  const f = w.forager, kind = f.bag[k], n = f.bagN[k], use = f.bagUse[k];
+  f.bag[k] = ''; f.bagN[k] = 0; f.bagUse[k] = 0;
   if (!kind) return null;
   const until = w.tick + Math.round(DROP_DAYS * TPD);
-  for (const d of w.dropped) if (d.kind === kind && (d.x - f.x) ** 2 + (d.y - f.y) ** 2 < DROP_PILE * DROP_PILE) {
+  if (!usesOf(kind)) for (const d of w.dropped) if (d.kind === kind && (d.x - f.x) ** 2 + (d.y - f.y) ** 2 < DROP_PILE * DROP_PILE) {
     d.n += n; d.until = until;
     return d;
   }
   const a = Math.PI * (0.2 + 0.6 * ((w.dropped.length * 0.38) % 1));   // (in front of it, where it shows, the next one along from the last)
   let x = f.x + Math.cos(a) * 0.6, y = f.y + 0.15 + Math.sin(a) * 0.35;
   if (!walkable(w, x, y)) { x = f.x; y = f.y; }
-  const d = dropOf(kind, x, y, w.tick, until, n);
+  const d = dropOf(kind, x, y, w.tick, until, n, use);
   w.dropped.push(d);
   return d;
 }
 // What another forager dropped (game.js, playing together): on a pile of its kind there, or a new one, as dropSlot left it.
-function dropAt(w, kind, x, y, n, born, until) {
-  for (const d of w.dropped) if (d.kind === kind && (d.x - x) ** 2 + (d.y - y) ** 2 < 1e-4) { d.n += n; d.until = until; return d; }
-  const d = dropOf(kind, x, y, born, until, n);
+function dropAt(w, kind, x, y, n, born, until, use = 0) {
+  if (!usesOf(kind)) for (const d of w.dropped) if (d.kind === kind && (d.x - x) ** 2 + (d.y - y) ** 2 < 1e-4) { d.n += n; d.until = until; return d; }
+  const d = dropOf(kind, x, y, born, until, n, use);
   w.dropped.push(d);
   return d;
 }
@@ -7387,11 +7688,12 @@ function moveSlot(f, a, b) {
   if (a === b || !f.bag[a]) return;
   if (f.bag[b] === f.bag[a]) {
     const m = Math.min(f.bagN[a], stackOf(f.bag[a], f) - f.bagN[b]);
+    if (!m && usesOf(f.bag[a])) { const u = f.bagUse[b]; f.bagUse[b] = f.bagUse[a]; f.bagUse[a] = u; return; }   // (two tools of a kind: they swap)
     f.bagN[b] += m; f.bagN[a] -= m;
     if (!f.bagN[a]) f.bag[a] = '';
   } else {
-    const id = f.bag[b], n = f.bagN[b];
-    f.bag[b] = f.bag[a]; f.bagN[b] = f.bagN[a]; f.bag[a] = id; f.bagN[a] = n;
+    const id = f.bag[b], n = f.bagN[b], u = f.bagUse[b];
+    f.bag[b] = f.bag[a]; f.bagN[b] = f.bagN[a]; f.bagUse[b] = f.bagUse[a]; f.bag[a] = id; f.bagN[a] = n; f.bagUse[a] = u;
   }
 }
 
@@ -7403,7 +7705,7 @@ function gather(w, kind, it) {
   const room = roomFor(f, t.id);
   if (!room) return { id: t.id, n: 0, why: 'full', into: [] };
   const id = t.id, n = takeFrom(w, kind, it, room, yieldOf(w, kind, it, t.n));
-  const into = stow(f, id, n);
+  const into = stow(f, id, n, kind === 'dropped' ? it.use : 0);   // (a dropped tool picked up keeps its wear)
   // Its own dropped things are no practice at all: that was practised when they were first taken out of the meadow, and
   // were it otherwise, setting a thing down and taking it up again would be a level for nothing. (GROUND_PRACTICE is for
   // what merely lies about unasked; this is only its satchel emptied onto the grass and put back.) The more a pick gives,
@@ -7455,6 +7757,8 @@ const LATER = {
   forager: null,                                                                                    // the player (startForager)
   camp: null,                                                                                       // made by the first fire lit (campAt)
   torches: null,                                                                                    // stuck in the ground (torchTick; an old meadow gets [])
+  pots: null,                                                                                       // the clay pots, things in the meadow (potsTick; an old meadow gets [])
+  hauled: null,                                                                                     // the treasures fished up, once a meadow (game.js landFish; an old meadow gets [])
   scorches: null,                                                                                   // where lightning blackened the ground (strike; an old meadow gets [])
   stone: null,                                                                                      // the old stone (stoneOf)
 };
@@ -7507,6 +7811,7 @@ function createWorld(seed, opts = {}) {
     dropped: [],                                                          // (see dropSlot)
     fires: [],                                                            // (see fireTick)
     racks: [],                                                            // (see rackTick)
+    seats: [],                                                            // (the seat logs, as many as you like: makeSeat)
     brambles: [], pips: [], brambleRng: makeRng(seed ^ 0xb4a3b1),          // (see bramblesTick)
     count: perKind(() => 0), expecting: perKind(() => 0),
     stats: { deaths: perKind(() => ({})) },                                 // deaths by cause, of each kind
@@ -7519,6 +7824,8 @@ function createWorld(seed, opts = {}) {
     ...LATER,
   };
   w.torches = [];                                             // (see torchTick: LATER's is null for a meadow kept before them)
+  w.pots = [];                                                // (see potsTick: likewise)
+  w.hauled = [];                                              // (recipes.js TREASURES: likewise)
   w.scorches = [];                                            // (see strike: likewise)
   makeTerrain(w);
   for (let k = Math.max(1, Math.round(HIVES * w.room)); k > 0; k--) placeHive(w);
@@ -7658,6 +7965,7 @@ function step(w) {
   buildGrid(w);
   weatherTick(w);
   if (w.fires.length) { fireTick(w); kitTick(w); }
+  if (w.pots.length && t % POT_EVERY === 0) potsTick(w);
   if (w.camp && t % DEED_EVERY === 0) deedCheck(w);
   if (w.racks.length && t % RACK_EVERY === 0) rackTick(w);
   if (w.torches.length && t % TORCH_EVERY === 0) torchTick(w);
@@ -7813,6 +8121,9 @@ function unpackWorld(kept) {
     if (F.cookDish === undefined) { F.cookDish = ''; F.cookItems = []; F.cookLeft = 0; F.cookTotal = 0; }   // (kept before pots)
     if (!F.own) F.own = [];                             // (kept before vessels were each fire's)
   }
+  if (!w.pots) w.pots = [];                             // (kept before the pot was a thing: one on each fire that made one, below)
+  for (const P of w.pots) { asFractions(P, ['x', 'y', 'water', 'heat', 'boiled', 'chopped', 'stirred', 'burnt']); if (P.copper === undefined) P.copper = false; }
+  if (!w.hauled) w.hauled = [];                         // (kept before the treasures)
   if (!w.torches) w.torches = [];                       // (kept before torches)
   for (const T of w.torches) asFractions(T, ['x', 'y', 'burn', 'wet']);
   if (!w.scorches) w.scorches = [];                     // (kept before them)
@@ -7829,6 +8140,11 @@ function unpackWorld(kept) {
   if (!w.forager) w.forager = startForager(w);            // (kept before the forager: it starts afresh)
   const F = w.forager;
   if (F.hand === undefined) F.hand = '';                  // (kept before the hands)
+  if (F.rod > 0) {                                      // (kept when the rod was carried, not in a slot: into the satchel, or the basket)
+    if (storeRoom(F, 'rod') > 0) storePut(F, 'rod', 1);
+    else if (w.camp && w.camp.basket && storeRoom(w.camp.basket, 'rod') > 0) storePut(w.camp.basket, 'rod', 1);
+    F.rod = 0;
+  }
   if (F.handHeat === undefined) { F.handHeat = -0; F.handFull = -0; if (F.hand) F.handFull = 1; }   // (and before a dish cooled in them)
   if (!F.homeX && !F.homeY) { F.homeX = F.x; F.homeY = F.y; }   // (kept before it had a home: where it is)
   if (w.camp) asFractions(w.camp, ['x', 'y']);
@@ -7841,11 +8157,14 @@ function unpackWorld(kept) {
     Bk.kept = 1;
   }
   else for (const fire of w.fires) if (fire.litAt >= 0) { campAt(w, fire); break; }   // (kept with a fire lit before camps came)
-  if (w.camp && !w.camp.seat) w.camp.seat = null;          // (kept before the seat log: none yet)
-  else if (w.camp) {
-    if (w.camp.seat.turn === undefined) w.camp.seat.turn = SEAT_TILT;   // (kept before it could be turned: it looks as it did)
-    asFractions(w.camp.seat, ['x', 'y', 'turn']);
+  if (!w.seats) w.seats = [];                              // (kept before seat logs were an array)
+  if (w.camp && w.camp.seat) {                             // (a kept camp's single seat log moves into the array)
+    const Q = w.camp.seat;
+    w.seats.push(Q);
+    w.camp.seat = null;
   }
+  for (const Q of w.seats) Q.turn = SEAT_FACES[seatFaceOf(Q.turn || 0)];   // (kept tilted or turned in 15° steps, before it had four facings)
+  for (const Q of w.seats) asFractions(Q, ['x', 'y', 'turn']);
   if (!w.racks) w.racks = [];                              // (kept before drying racks were an array)
   if (w.camp && w.camp.rack) {                             // (a kept single rack moves into the array)
     const K = w.camp.rack;
@@ -7868,11 +8187,18 @@ function unpackWorld(kept) {
   }
   if (w.camp && !w.camp.lean) w.camp.lean = null;          // (kept before the lean-to: none yet)
   else if (w.camp) asFractions(w.camp.lean, ['x', 'y']);
+  if (w.camp && !w.camp.block) w.camp.block = null;        // (kept before the chopping block: none yet)
+  else if (w.camp) { asFractions(w.camp.block, ['x', 'y']); if (!w.camp.block.kind) w.camp.block.kind = 'log'; }   // (kept as a chopping block: a log now)
+  for (const T of [F, w.camp && w.camp.basket, w.camp && w.camp.block, ...(w.racks || [])]) {   // (kept before tools wore: all new)
+    if (!T || !T.bag) continue;
+    if (!T.bagUse) T.bagUse = new Array(T.bag.length).fill(0);
+    while (T.bagUse.length < T.bag.length) T.bagUse.push(0);
+  }
   if (w.camp && !w.camp.deeds) {                           // (kept before cosy: the blanks, then what it can see it did)
     w.camp.deeds = []; w.camp.cosy = 0; w.camp.raised = 0; w.camp.dishes = []; w.camp.duskLit = false; w.camp.stormLit = false;
     earnDeed(w, 'camp');
     if (w.camp.basket) earnDeed(w, 'basket');
-    if (w.camp.seat) earnDeed(w, 'seat');
+    if (w.seats.length) earnDeed(w, 'seat');
     for (const T of w.torches) if (inCamp(w, T.x, T.y)) { earnDeed(w, 'torch'); break; }
   }
   if (!w.stone) w.stone = stoneOf(w);                   // (kept before the old stone: it's put up as it opens)
@@ -7889,6 +8215,10 @@ function unpackWorld(kept) {
     F.kit = { firing: F.kit.firing, left: F.kit.left, total: F.kit.total, x: F.kit.x, y: F.kit.y };
   }
   asFractions(F.kit, ['x', 'y']);
+  potsOwed(w);                                          // (and the vessels' fires are known now)
+  if (F.hand === 'pot' && !handPot(w)) F.hand = '';
+  if (F.hand === 'board' && !(w.camp && w.camp.block && w.camp.block.held === 0)) F.hand = '';
+  if (F.hand !== 'board' && w.camp && w.camp.block) w.camp.block.held = -1;
   if (noFinds) startFinds(w);
   return w;
 }
@@ -8745,10 +9075,10 @@ const api = {
   isFlower, waterAt, FORAGE_RANGE, HIVE_ROOM, HIVE_FULL, REFILL, HIVE_TREE, hollow,
   TREES, treeStage, treeAge, standing, bearing, inBloom, SEEDLING, SAPLING, GROWN, KIND_NAMES,
   FROG_K, SPAWN_WORTH, FISH_K, FISH_EAT, takeFish, fishRoom, CROW_SEATS, SHROOMS, SHROOM_KINDS, FINDS, FIND_KINDS, findSeason, eachPickable, greenStage, greenPicked, GREEN_SEASONS, brambleStage, RIPE_FROM, RIPE_TO,
-  bagCount, spend, stow, feedForager, feedHand, holdDish, dropHand, hungerOf, HUNGRY, TUMMY, fireSpot, layFire, feedFire, fireRoom, lightable, lightFire, fireHeat, fireWarmth, CAMP_R, CAMP_FLAT, inCamp, campLevel, campR, earnDeed, countCosy, DEED_EVERY, BASKET_SLOTS, basketSpot, makeBasket, campSpot, seatSpot, makeSeat, seatNear, SEAT_HALF, SEAT_TILT, SEAT_OUT, rackSpot, makeRack, makeLean, RACK_SLOTS, RACK_KEEP, underLean, dryPace, driesTo, curledUp, CURL_TICKS, moveBetween, moveInto, putAway,
+  bagCount, spend, stow, feedForager, feedHand, holdDish, dropHand, hungerOf, HUNGRY, TUMMY, fireSpot, layFire, feedFire, fireRoom, lightable, lightFire, fireHeat, fireWarmth, CAMP_R, CAMP_FLAT, inCamp, campLevel, campR, earnDeed, countCosy, DEED_EVERY, BASKET_SLOTS, basketSpot, makeBasket, campSpot, seatSpot, makeSeat, seatNear, SEAT_HALF, SEAT_FACES, seatFaceOf, SEAT_OUT, rackSpot, makeRack, makeLean, RACK_SLOTS, RACK_KEEP, underLean, dryPace, driesTo, curledUp, CURL_TICKS, moveBetween, moveInto, putAway,
   torchSpot, placeTorch, relightTorch, torchUnder, TORCH_BURN, TORCH_WET, TORCH_MAX, TORCH_GAP, scorchFade,
-  storeCount, storeRoom, storePut, storeTake, tidyStore, worldStores, storesAt, storesCount, storesRoom, storesTake, storesPut, STORE_NEAR,
-  cookTicks, cookReady, cookOn, cookTake, shapeVessel, makeVessel, kitOf, cookProgress, SKILLS, SKILL_NAMES, SKILL_TOP, skillNeed, skillLevel, skillProgress, perk, gainSkill, FIRE_STICK, FIRE_MOST, FIRE_LOW, FIRE_EMBERS, FIRE_NEAR, FIRE_REACH, FIRE_GAP, FIRE_WET, FIRE_WARM,
+  storeCount, storeRoom, storePut, storeTake, tidyStore, takeOne, usesOf, usesLeft, wear, snapTool, mendTool, worldStores, storesAt, storesCount, storesRoom, storesTake, storesPut, STORE_NEAR,
+  cookTicks, cookReady, cookOn, cookTake, shapeVessel, makeVessel, potOn, handPot, potsOwed, copperPot, takePot, setPot, potOnFire, fillPot, blockSpot, makeBlock, blockName, BLOCK_NEAR, blockLay, blockChop, boardCount, takeBoard, boardBack, BOARD_MOST, POT_STEAM, POT_SIMMER, POT_ROLL, POT_LEAST, POT_SCOOP, kitOf, cookProgress, SKILLS, SKILL_NAMES, SKILL_TOP, skillNeed, skillLevel, skillProgress, perk, gainSkill, FIRE_STICK, FIRE_MOST, FIRE_LOW, FIRE_EMBERS, FIRE_NEAR, FIRE_REACH, FIRE_GAP, FIRE_WET, FIRE_WARM,
   get pace() { return foragerPace; }, set pace(v) { foragerPace = clamp(+v || 1, 0.1, 20); },
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;

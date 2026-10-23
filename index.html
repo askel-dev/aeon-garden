@@ -363,6 +363,24 @@
   @media (hover: hover) { #ask .go:hover { background: #44702f; } }
   #ask .go:disabled { opacity: 0.5; }
   #ask.sent :is(textarea, .btns, .ask-q), #ask:not(.sent) .ask-thanks { display: none; }
+  /* ---- what's new (game.js, what's new): once after an update, a card in the middle like the ideas one, what changed in each update
+     since the last one seen, a bullet a change; ••• › What's new brings it back. No backdrop: the meadow goes on behind. */
+  #updates { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 10; width: min(380px, calc(100% - 32px)); max-height: calc(100% - var(--top) - var(--bottom));
+    display: flex; flex-direction: column; padding: 20px 22px 18px; background: var(--paper, none) #f7eedc; border-radius: 22px; box-shadow: 0 20px 60px rgba(50, 40, 15, 0.3); }
+  #updates:not(.hidden) > * { animation: pop-in 0.18s ease-out; }
+  #updates h2 { margin: 0 0 4px; font-size: 24px; font-weight: 650; line-height: 1.15; }
+  #updates .up-list { overflow-y: auto; overscroll-behavior: contain; margin: 0 -6px 14px; padding: 0 6px; }
+  #updates section + section { margin-top: 12px; padding-top: 12px; border-top: 1px dashed #d9ccb0; }
+  #updates h3 { margin: 6px 0 6px; font-size: 16px; font-weight: 900; }
+  #updates h3 small { display: block; margin-top: 1px; font-size: 12px; font-weight: 700; color: var(--muted); }
+  #updates ul { margin: 0; padding-left: 18px; }
+  #updates li { padding: 2px 0; line-height: 1.4; }
+  #updates section:not(.open) li.more { display: none; }
+  #updates .up-more { display: block; min-height: 32px; margin: 2px 0 0 12px; padding: 0 6px; border: none; background: none; font: inherit; font-size: 13px; font-weight: 800;
+    color: #8a6a48; text-decoration: underline; text-decoration-color: rgba(138, 106, 72, 0.4); text-underline-offset: 3px; cursor: pointer; }
+  @media (pointer: coarse) { #updates .up-more { min-height: 44px; } }
+  #updates .go { flex: none; min-height: 44px; border-radius: 14px; background: #4f7f3a; color: #fff; font-size: 16px; padding: 11px; box-shadow: none; }
+  @media (hover: hover) { #updates .go:hover { background: #44702f; } }
   /* ---- friends (game.js friends): a card in the middle (up top on a touch screen, out of the keyboard's way): your code,
      a line to add one, the list (a dot for who's about, where they are, and what you can do), Done at the foot. A friend's
      ask is a small card up top, just under the news. */
@@ -475,6 +493,11 @@
   .wd-hat.on, .wd-cloak.on { box-shadow: inset 0 0 0 1px #e2d6bb, 0 0 0 2.5px var(--accent); }
   @media (hover: hover) { .wd-hat:hover, .wd-cloak:hover { transform: translateY(-1px); } }
   .wd-hat:active, .wd-cloak:active { transform: translateY(1px); }
+  /* A piece fished up from the water (game.js wdLock): greyed, with a small lock, till it's found in this meadow. */
+  .wd-hat.locked, .wd-cloak.locked { position: relative; filter: grayscale(1) brightness(0.8); opacity: 0.5; cursor: default; }
+  .wd-hat.locked::after, .wd-cloak.locked::after { content: ''; position: absolute; right: 3px; bottom: 3px; width: 9px; height: 7px; border-radius: 2px; background: #5b4630;
+    box-shadow: 0 -4px 0 -1px transparent; }
+  .wd-hat.locked::before, .wd-cloak.locked::before { content: ''; position: absolute; right: 4.5px; bottom: 8px; width: 6px; height: 5px; border: 1.5px solid #5b4630; border-bottom: 0; border-radius: 4px 4px 0 0; box-sizing: border-box; }
   #wd-name-hat { font-size: 12px; color: var(--muted); min-height: 1.2em; }
   .wd-btns { display: flex; gap: 8px; margin-top: 8px; }
   .wd-btns .later { flex: none; border-radius: 14px; background: #fbf5e8; padding: 10px 16px; box-shadow: none; }
@@ -653,6 +676,9 @@
   #satchel .slot:has(i.on) { cursor: grab; }
   #satchel.dragging, #satchel.dragging .slot { cursor: grabbing; }
   #satchel .slot.lifted i, #satchel .slot.lifted b { opacity: 0.3; }
+  /* the slot in its hands (game.js holdSlot), as a hotbar's: ringed in brass, a little lighter; not while cooking, where the
+     ring says what goes in the pot */
+  #satchel:not(.cooking, .empty) .slot.sel { background: rgba(255, 248, 228, 0.75); box-shadow: inset 0 0 0 2px #c99a48, inset 0 0 0 3.5px rgba(255, 246, 220, 0.9), 0 1px 0 #a8742a; }
   #satchel .slot.over { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
   /* while the cooking card is up (game.js renderSatchel: .cooking), a thing that goes in the pot or on the fire is ringed and
      the rest let down: a tap does something, or says not for the pot */
@@ -678,6 +704,8 @@
     #satchel .slots { gap: 0; }
     #satchel .slot { width: min(52px, calc((100vw - 22px) / 8)); height: 52px; background: none; box-shadow: none; }
     #satchel .slot::before { content: ''; position: absolute; inset: 2px; border-radius: 9px; background: rgba(150, 115, 60, 0.1); box-shadow: inset 0 1px 2px rgba(90, 65, 25, 0.18); }
+    #satchel:not(.cooking, .empty) .slot.sel { background: none; box-shadow: none; }
+    #satchel:not(.cooking, .empty) .slot.sel::before { background: rgba(255, 248, 228, 0.75); box-shadow: inset 0 0 0 2px #c99a48, inset 0 0 0 3.5px rgba(255, 246, 220, 0.9), 0 1px 0 #a8742a; }
     #satchel .slot.over { background: none; box-shadow: none; }
     #satchel .slot.over::before { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
     #satchel.cooking .slot.cookable::before { box-shadow: inset 0 0 0 1.5px var(--accent); }
@@ -688,6 +716,16 @@
   }
   #satchel .slot.held i { opacity: 0.3; }   /* all of it in the pot (game.js potHeld) */
   #satchel .slot.asking::after { opacity: 0 !important; }   /* (its Eat is up instead) */
+  /* A worn tool's bar under its tile (game.js wearTile): what's left of it, green to amber to red; none on a new one. */
+  .wear { position: absolute; left: 8px; right: 8px; bottom: 3px; height: 3px; border-radius: 2px; display: none; overflow: hidden;
+    background: rgba(70, 50, 20, 0.28); text-decoration: none; pointer-events: none; }
+  .wear.on { display: block; }
+  .wear::before { content: ''; position: absolute; inset: 0; border-radius: 2px; background: var(--good); transform-origin: left; transform: scaleX(var(--w, 1)); }
+  .wear[data-tier="mid"]::before { background: #dca23a; }
+  .wear[data-tier="low"]::before { background: #c4532c; }
+  .wear.fray { animation: wear-fray 0.9s ease-out; }
+  @keyframes wear-fray { 0%, 100% { transform: none; } 30% { transform: scaleY(2.4); box-shadow: 0 0 0 2px rgba(196, 83, 44, 0.35); } }
+  #satchel .slot.lifted .wear { opacity: 0.3; }
   /* ---- eating (game.js eatAsk): its name over the slot with a small Eat, or why not */
   #eat { position: fixed; z-index: 6; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 4px 4px 11px; border-radius: 12px; transform: translateX(-50%);
     background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); font-size: 13px; font-weight: 800; white-space: nowrap; animation: fade-in 0.15s ease-out; }
@@ -736,6 +774,7 @@
   #cook-vessels button.make { background: none; outline: 1.5px dashed rgba(150, 115, 60, 0.5); outline-offset: -1.5px; box-shadow: none; filter: grayscale(0.7); opacity: 0.75; }
   #cook-vessels button.make small { color: var(--accent-ink); font-weight: 800; }
   #cook-vessels button.make.on { outline-color: var(--accent); background: var(--accent-soft); filter: none; opacity: 1; }
+  #cook-vessels button.away { background: none; box-shadow: none; filter: grayscale(0.8); opacity: 0.55; }
   #cook-vessels button.locked { filter: grayscale(1); opacity: 0.5; }
   #cook-vessels button.locked small { color: #8a6a48; font-weight: 700; }
   #cook-vessels button.locked.on { filter: grayscale(0.6); opacity: 0.85; background: rgba(150, 115, 60, 0.12); outline-color: rgba(150, 115, 60, 0.6); }
@@ -812,10 +851,12 @@
   @media (pointer: coarse) { #cook-basket .bslots { --bslot: 46px; gap: 6px; max-height: calc(3 * var(--bslot) + 2 * 6px + 8px); } }
   .cook-row { display: flex; align-items: center; gap: 8px; margin-top: auto; padding-top: 14px; }
   .cook-tools { display: flex; gap: 8px; }
-  #cook-stick, #cook-book { position: relative; flex: none; width: 48px; height: 48px; padding: 0; border: none; border-radius: 14px; background: rgba(150, 115, 60, 0.12); cursor: pointer; }
+  #cook-stick, #cook-book, #cook-lift { position: relative; flex: none; width: 48px; height: 48px; padding: 0; border: none; border-radius: 14px; background: rgba(150, 115, 60, 0.12); cursor: pointer; }
   #cook-stick i { position: absolute; inset: 6px; background-image: var(--items); background-repeat: no-repeat; background-size: calc(100% * var(--item-n, 13)) 100%; }
   #cook-stick b { position: absolute; right: 4px; bottom: 2px; font-size: 12px; font-weight: 900; }
   #cook-book i { position: absolute; inset: 5px; background: center / contain no-repeat; }
+  #cook-lift img { position: absolute; left: 8px; top: 3px; width: 32px; height: 32px; }
+  #cook-lift small { position: absolute; left: 0; right: 0; bottom: 2px; font-size: 10px; font-weight: 800; color: var(--accent-ink, #6b4a1f); }
   /* the stick button wears the fire: a ring round it, filled as it still has burning (game.js cookFuel: --fuel), amber when
      it's down to its last sticks (.low) */
   #cook-stick::before { content: ''; position: absolute; inset: -3px; padding: 2px; border-radius: 16px; pointer-events: none;
@@ -832,7 +873,7 @@
   #cook-go:disabled { opacity: 0.45; cursor: default; }
   #cook.busy #cook-go { opacity: 1; background: #d9a066; box-shadow: 0 3px 0 #a8742a; }
   #cook.busy #cook-go::before { content: ''; position: absolute; inset: 0; background: #e98a4b; transform-origin: 0 50%; transform: scaleX(var(--cook-p, 0)); }
-  #cook-go:not(:disabled):active, #cook-stick:active, #cook-book:active { transform: translateY(2px); }
+  #cook-go:not(:disabled):active, #cook-stick:active, #cook-book:active, #cook-lift:active { transform: translateY(2px); }
   #cook-go:not(:disabled):active { box-shadow: 0 1px 0 #b8622a; }
   #cook .close { position: absolute; top: -14px; right: -14px; flex: none; width: 46px; height: 46px; margin: 0; padding: 0; border: none; border-radius: 50%; font-size: 0;
     color: var(--ink); background: linear-gradient(180deg, #fffaf0, #f1e5c9); box-shadow: inset 0 0 0 1.5px #d2b06a, 0 2px 0 #a8742a, 0 4px 12px rgba(70, 55, 25, 0.25);
@@ -840,7 +881,7 @@
   #cook .close::before { content: ''; position: absolute; inset: 0; margin: auto; width: 20px; height: 20px; background: currentColor;
     -webkit-mask: var(--x-lines) center / contain no-repeat; mask: var(--x-lines) center / contain no-repeat; }
   #cook .close:active { transform: translateY(2px); box-shadow: inset 0 0 0 1.5px #d2b06a, 0 0 0 #a8742a; }
-  @media (hover: hover) { #cook .close:hover, #cook-stick:hover, #cook-book:hover { filter: brightness(1.04); } }
+  @media (hover: hover) { #cook .close:hover, #cook-stick:hover, #cook-book:hover, #cook-lift:hover { filter: brightness(1.04); } }
   /* a thing lifted out of the cooking window's satchel (game.js setupCookBag), and anything flying in or out of the pot */
   .fly.big { width: 72px; height: 72px; z-index: 7; }
   .fly.big.to-pot { filter: drop-shadow(0 0 10px rgba(255, 170, 70, 0.95)); }
@@ -903,7 +944,7 @@
   #cook.at-fire #cook-what:is(:empty, :has(> span:empty)) { display: none; }
   #cook.at-fire #cook-what b { font-size: 16px; }
   #cook.at-fire .cook-act { display: flex; gap: 8px; pointer-events: auto; }
-  #cook.at-fire #cook-stick { background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); }
+  #cook.at-fire :is(#cook-stick, #cook-lift) { background: var(--paper, none) var(--card); box-shadow: var(--edge), var(--shadow); }
   #cook.at-fire #cook-go { flex: none; min-width: 120px; }
   #cook.at-fire.busy #cook-go { display: none; }   /* (cooking: the card over the pot says how long, #cook-timer; the stick's still to hand) */
   #cook.at-fire .cook-side { position: absolute; left: 50%; bottom: var(--bottom); transform: translateX(-50%); flex-direction: row; align-items: center; gap: 8px;
@@ -924,7 +965,46 @@
     #cook.at-fire .close::before { left: 0; right: 0; margin: auto; }
     #cook.at-fire .close span { display: none; }
   }
-  #cook.at-fire #cook-empty, #cook.at-fire.making #cook-go { display: none; }   /* (the rings' ×s empty the pot; making finishes by itself) */
+  #cook.at-fire #cook-empty, #cook.at-fire.making #cook-go { display: none; }
+  /* the board at the fire (game.js boardUp): a scene of its own over the whole screen, as in cooking-lab.html: the board on
+     the grass (#board, a canvas), a parchment strip at the foot of what can go on it, a note up top that fades, and a round
+     brass arrow on the right back to the pot with what's in the pot counted on it. Under it the meadow isn't drawn. While the
+     camera goes down onto the board and back out to the pot (.moving) its parts are away. */
+  #boarding { position: fixed; inset: 0; z-index: 7; display: none; touch-action: none; user-select: none; -webkit-user-select: none; }
+  #boarding.moving > :not(#board) { pointer-events: none; }
+  #boarding.moving #board { cursor: auto; }   /* (a tap on the board's canvas then gets the camera there at once) */
+  #boarding > :not(#board) { transition: opacity 0.25s; }
+  #boarding.moving > :not(#board) { opacity: 0; transition: opacity 0.12s; }
+  #boarding.flip #board-back { right: auto; left: max(10px, env(safe-area-inset-left)); }   /* (the board mirrored, its open edge on the left: the pot's that way) */
+  #boarding.flip #board-back svg { transform: scaleX(-1); }
+  #board { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: none; }
+  #board-back { position: absolute; top: 50%; right: max(10px, env(safe-area-inset-right)); display: grid; place-items: center; width: 52px; height: 52px; margin-top: -26px;
+    padding: 0; border: none; border-radius: 50%; cursor: pointer; background: linear-gradient(180deg, #fffaf0, #f1e5c9);
+    box-shadow: inset 0 0 0 1.5px #d2b06a, 0 2px 0 #a8742a, 0 6px 16px rgba(40, 30, 10, 0.25); transition: transform 0.08s, box-shadow 0.08s; }
+  #board-back:active { transform: translateY(2px); box-shadow: inset 0 0 0 1.5px #d2b06a, 0 0 0 #a8742a; }
+  #board-back svg { width: 22px; height: 22px; }
+  #board-back .n { position: absolute; top: -4px; right: -4px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px;
+    background: #9e4a17; color: #fff6e6; font: 800 11px/20px Nunito, sans-serif; text-align: center; }
+  #board-back .n:empty { display: none; }
+  #board-strip { position: absolute; left: 50%; bottom: max(10px, env(safe-area-inset-bottom)); transform: translateX(-50%); display: flex; gap: 2px;
+    max-width: calc(100vw - 20px); overflow-x: auto; padding: 4px; border-radius: 16px; background: var(--card); scrollbar-width: none;
+    box-shadow: inset 0 0 0 1px rgba(150, 115, 60, 0.22), 0 6px 20px rgba(40, 30, 10, 0.25); }
+  #board-strip::-webkit-scrollbar { display: none; }
+  #board-strip:empty { display: none; }
+  #board-strip button { position: relative; flex: none; width: 48px; height: 48px; padding: 0; border: none; border-radius: 12px; background: none; cursor: pointer; font: inherit; color: var(--ink); }
+  #board-strip button:hover { background: rgba(150, 115, 60, 0.10); }
+  #board-strip button:active { transform: scale(0.92); }
+  #board-strip i { position: absolute; inset: 3px; background-image: var(--items); background-repeat: no-repeat; background-size: calc(100% * var(--item-n, 13)) 100%; }
+  #board-strip b { position: absolute; right: 3px; bottom: 1px; font-size: 12px; font-weight: 900; line-height: 1; }
+  #board-strip .sep { flex: none; width: 1px; margin: 8px 3px; background: var(--line, #ecdfc8); }
+  #board-note { position: absolute; top: max(10px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); margin: 0; padding: 6px 14px; border-radius: 12px;
+    background: var(--card); color: var(--muted, #6f6657); white-space: nowrap; font-size: 13px; pointer-events: none; transition: opacity 0.6s;
+    box-shadow: inset 0 0 0 1px rgba(150, 115, 60, 0.22), 0 4px 14px rgba(40, 30, 10, 0.2); }
+  #board-note b { color: var(--ink); font: 650 14px Fraunces, Georgia, serif; margin-right: 6px; }
+  #board-note.hide { opacity: 0; }
+  @media (max-width: 560px) { #board-note { font-size: 12px; white-space: normal; width: calc(100vw - 40px); text-align: center; } }
+  #cook.boarding .cook-pot > :is(#cook-slots, .cook-under, #cook-card, #cook-timer), #cook.boarding #cook-canvas { visibility: hidden; }   /* (the rings' ×s empty the pot; making finishes by itself) */
+  #cook.at-fire.boarding .cook-side { opacity: 0; pointer-events: none; transition: opacity 0.2s; }   /* (the bar steps away as the board's laid down) */
   /* the rings over the pot (game.js renderSlots): a dark pill with how many are in, and a ring a slot over the rim, clear of the
      steam and the spoon. Empty ones dashed with a +, filled ones parchment with the thing's painting and a brass × on the corner
      (24 px to see, 44 to hit). A thing landing fills its ring with a pop. */
@@ -1243,6 +1323,8 @@
   #book .facts { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 6px; }
   #book .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 99px; font-size: 12.5px; font-weight: 800; background: rgba(150, 115, 60, 0.1); color: var(--muted); }
   #book .chip.warm { background: var(--accent-soft); color: var(--accent-ink); }
+  #book .chip.bottle { background: rgba(60, 120, 120, 0.13); color: #2f6466; }
+  #book .bottle-mark { width: 14px; height: 14px; flex: none; vertical-align: -2px; }
   #book .chip.fills b { display: inline-flex; gap: 3px; }
   #book .chip.fills i { width: 8px; height: 8px; border-radius: 50%; background: #e6d7b8; box-shadow: inset 0 1px 1px rgba(80, 60, 30, 0.25); }
   #book .chip.fills i.on { background: radial-gradient(circle at 35% 30%, #f6d98c, #b07a2a 70%); box-shadow: 0 0 0 1px #8a5e22; }
@@ -1255,6 +1337,21 @@
   #book .needs li.got em { color: var(--accent-ink); }
   #book .needs li.want .it { opacity: 0.45; filter: saturate(0.3); }
   #book .needs .it { display: block; width: 36px; height: 36px; background-image: var(--items); background-repeat: no-repeat; background-size: calc(100% * var(--item-n, 13)) 100%; }
+  /* The fishing guide (game.js fishGuideHTML) and a catch's rarity: warmer and bolder the rarer it is */
+  #book .needs .it.shade { filter: brightness(0); opacity: 0.2; }
+  #book .needs li.catch button { padding-block: 4px; }
+  #book .needs li.catch span { display: grid; gap: 1px; min-width: 0; }
+  #book .needs li.catch small { font-size: 12px; font-weight: 700; color: var(--muted); line-height: 1.25; }
+  #book .needs li.catch em.rare { white-space: nowrap; }
+  #book .rare.r0 { color: var(--muted); }
+  #book .rare.r1 { color: #5e7a3e; }
+  #book .rare.r2 { color: #2f6466; }
+  #book .rare.r3 { color: #8a4fa0; }
+  #book .rare.r4 { color: #b0661c; }
+  #book .chip.rare.r1 { background: rgba(94, 122, 62, 0.13); }
+  #book .chip.rare.r2 { background: rgba(60, 120, 120, 0.13); }
+  #book .chip.rare.r3 { background: rgba(138, 79, 160, 0.12); }
+  #book .chip.rare.r4 { background: rgba(214, 160, 60, 0.22); box-shadow: inset 0 0 0 1px rgba(176, 102, 28, 0.4); }
   #book .needs li.q { background: none; box-shadow: none; border: 1.5px dashed rgba(150, 115, 60, 0.28); color: #9c8a66; font-style: italic; font-weight: 700; }
   #book .needs li.q b { display: grid; place-items: center; width: 30px; height: 30px; margin-left: 3px; border-radius: 50%; background: rgba(150, 115, 60, 0.12);
     font-style: normal; font-weight: 900; color: #a8916a; }
@@ -1382,6 +1479,7 @@
   #make .mk .mi { position: relative; display: block; width: 48px; height: 48px; margin: 1px auto 3px; }
   #make .mk .mi i { position: absolute; inset: 4px; background: center / contain no-repeat; opacity: 0.5; filter: saturate(0.4); }
   #make .mk.ready .mi i { opacity: 1; filter: none; }
+  #make .mk.new { opacity: 0.55; }   /* (Mend, while the tool's as good as new) */
   #make .mk .mi::before { content: ''; position: absolute; inset: 0; border-radius: 50%;
     background: conic-gradient(var(--accent) calc(var(--k, 0) * 360deg), rgba(150, 115, 60, 0.18) 0);
     -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3.5px), #000 calc(100% - 3px));
@@ -1903,7 +2001,7 @@
   }
   /* On a phone the meadow comes first. First things is a slim note: as wide as it says, its chapter a small line over the
      step worked on (the whole note the tap that folds it, so its head needn't be 44 px tall). The satchel shows only the
-     slots with something in them, a new one opening as a thing lands; all of them while one is dragged or the basket is open
+     slots with something in them (and the one in its hands, empty or not: holdSlot), a new one opening as a thing lands; all of them while one is dragged or the basket is open
      (somewhere to let go), and the empty satchel is the slim row it is on a computer. */
   @media (max-width: 760px), (max-height: 500px) {
     #tasks { width: max-content; min-width: 120px; max-width: min(220px, 62vw); padding: 0 10px 6px; border-radius: 12px; }
@@ -1918,7 +2016,7 @@
   @media (pointer: coarse) and (max-width: 760px), (pointer: coarse) and (max-height: 500px) {
     #satchel .slots { gap: 0; }
     #satchel .slot { transition: width 0.25s ease-out, opacity 0.25s; }
-    body:not(:has(#larder:not(.hidden))) #satchel:not(.empty, .dragging, .cooking) .slot:not(:has(i.on)) { width: 0; opacity: 0; pointer-events: none; }
+    body:not(:has(#larder:not(.hidden))) #satchel:not(.empty, .dragging, .cooking) .slot:not(:has(i.on), .sel) { width: 0; opacity: 0; pointer-events: none; }
     #satchel.empty .slot.slot { width: 22px; height: 10px; }
     #satchel.empty .slot::before { inset: 2px 3px; border-radius: 4px; }
   }
@@ -1950,6 +2048,10 @@
   #intro.named h1 { opacity: 0.95; transform: none; }
   #intro.named p { opacity: 0.8; }
   body.intro #hud-right, body.intro #satchel, body.intro #minimap, body.intro #vitals, body.intro #me-box, body.intro #thermo, body.intro #news, body.intro #chat, body.intro #tasks { opacity: 0; pointer-events: none; }
+  /* fishing (game.js fishHud): the HUD drifts away, leaving the meadow and the water; a fish landed fades the satchel back in a while */
+  body.still #hud-right, body.still #satchel, body.still #minimap, body.still #vitals, body.still #me-box, body.still #thermo, body.still #tasks, body.still #what { opacity: 0; pointer-events: none; transition: opacity 2.5s ease-in-out; }
+  body.unstill #hud-right, body.unstill #satchel, body.unstill #minimap, body.unstill #vitals, body.unstill #me-box, body.unstill #thermo, body.unstill #tasks, body.unstill #what { transition: opacity 0.9s ease-out; }
+  body.still.caught #satchel { opacity: 1; pointer-events: auto; transition: opacity 0.9s ease-out; }
   #hud-right, #satchel, #vitals, #me-box, #thermo, #news, #chat { transition: opacity 0.9s; }
   @media (max-height: 500px) { #intro .lb { height: max(40px, 9vh); } #intro p { display: none; } }
 </style>
@@ -2001,6 +2103,14 @@
 <div id="tasks" class="away" aria-live="polite"></div>
 
 <!-- bottom middle: the satchel, a row of slots (game.js renderSatchel), and by it the make button (renderBuild) -->
+<!-- the board at the fire, a scene of its own over everything (game.js, the board at the fire; board.js): the board on the grass,
+     what can go on it in a strip at the foot, its arrow back to the pot -->
+<div id="boarding" role="dialog" aria-label="The chopping board">
+  <canvas id="board" aria-label="The chopping board: swipe through a thing to cut it, sweep the pieces off its open edge into the pot"></canvas>
+  <p id="board-note"><b>The board</b><span>Swipe through a thing to cut it · drag a piece slowly off the open edge into the pot · drag from the back edge to scrape it all in</span></p>
+  <div id="board-strip" role="group" aria-label="Lay on the board"></div>
+  <button id="board-back" title="Back to the pot (Esc)" aria-label="Back to the pot"><svg viewBox="0 0 20 20"><path d="M7 4l6 6-6 6" fill="none" stroke="#6a4a1c" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="n"></span></button>
+</div>
 <div id="cook" class="hidden" role="dialog" aria-label="Cooking at the fire" tabindex="-1">
   <div class="cook-pot">
     <canvas id="cook-canvas" aria-label="The pot over the fire: drop things in, tap one to take it out"></canvas>
@@ -2015,6 +2125,7 @@
     <div class="cook-row">
       <span class="cook-tools">
         <button id="cook-stick" data-act="cook-stick" title="A stick on the fire (F)" aria-label="A stick on the fire"><i></i><b></b></button>
+        <button id="cook-lift" class="hidden" data-act="cook-lift" title="Lift the pot off the fire, to carry it" aria-label="Lift the pot off the fire"><img alt=""><small>Lift</small></button>
         <button id="cook-book" data-act="book" title="Recipes (B)" aria-label="Recipe book"><i></i><kbd>B</kbd></button>
       </span>
       <button class="close" data-act="cook-close" title="Leave the fire (Esc)" aria-label="Leave the fire">✕</button>
@@ -2035,6 +2146,13 @@
 <button id="swing-btn" class="hidden" data-act="swing" title="Swing at a friend (X) · hold to throw something" aria-label="Swing at a friend, or hold to throw"><svg viewBox="0 0 32 32" aria-hidden="true"><g stroke="#b08a52" stroke-width="2" stroke-linecap="round" fill="none"><path d="M2.5 12.5h5" opacity=".55"/><path d="M1.5 17.5h6.5"/><path d="M3 22.5h5" opacity=".75"/></g><g fill="#c98f5a" stroke="#5a3c22" stroke-width="1.4" stroke-linejoin="round"><rect x="11.6" y="7.2" width="4" height="9" rx="2"/><rect x="15.4" y="5.6" width="4" height="10.6" rx="2"/><rect x="19.2" y="6.4" width="4" height="9.8" rx="2"/><rect x="22.8" y="9" width="3.6" height="8" rx="1.8"/><path d="M11.4 15.4h14.9v4.6c0 3.6-2.6 6.2-6.2 6.2h-2.4c-3.6 0-6.3-2.4-6.3-6z"/></g><path d="M12.4 17.6h12.6" stroke="#c98f5a" stroke-width="2.2" stroke-linecap="round"/></svg></button>
 <button id="hug-btn" class="hidden" data-act="hug" title="Hug a friend (G)" aria-label="Hug a friend"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 27.4c-6.4-4.2-11.4-8.8-11.4-13.9 0-3.5 2.7-6 5.9-6 2.1 0 4.1 1.2 5.5 3.2 1.4-2 3.4-3.2 5.5-3.2 3.2 0 5.9 2.5 5.9 6 0 5.1-5 9.7-11.4 13.9z" fill="#d0604f" stroke="#5a3c22" stroke-width="1.4" stroke-linejoin="round"/><path d="M10.2 12c1.1-1.3 2.7-1.6 4-.9" stroke="#f3b3a4" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M26.5 4.2v3.4M24.8 5.9h3.4" stroke="#d2a96a" stroke-width="1.6" stroke-linecap="round"/></svg></button>
 <button id="rope-btn" class="hidden" data-act="rope" title="Tie the rope to a friend (L)" aria-label="Tie the rope to a friend"><svg viewBox="0 0 32 32" aria-hidden="true"><g fill="none" stroke-linecap="round"><g stroke="#5a3c22" stroke-width="5"><ellipse cx="14" cy="18" rx="9.5" ry="5.6"/><ellipse cx="14.6" cy="14.6" rx="9" ry="5.2"/><path d="M23.4 15.6c2.6 2 1.4 6.6 4.6 9.4"/></g><g stroke="#c9a062" stroke-width="2.8"><ellipse cx="14" cy="18" rx="9.5" ry="5.6"/><ellipse cx="14.6" cy="14.6" rx="9" ry="5.2"/><path d="M23.4 15.6c2.6 2 1.4 6.6 4.6 9.4"/></g><path d="M8 10.6c3-1.6 9-1.8 12.6-.2" stroke="#ecd49c" stroke-width="1.2"/></g></svg></button>
+<!-- what's new: once after an update, what it brought (game.js, what's new; the words in updates.js) -->
+<div id="updates" class="hidden" role="dialog" aria-labelledby="updates-title">
+  <h2 class="fr" id="updates-title">What’s new</h2>
+  <div class="up-list"></div>
+  <button class="btn go" data-act="updates-close">Close</button>
+</div>
+
 <!-- the basket at camp, open over the satchel (game.js, the basket at camp) -->
 <div id="larder" class="hidden" role="dialog" aria-label="The basket at camp">
   <div class="l-head"><h2 class="fr">Basket<small></small></h2><button class="l-all" data-act="larder-all">Put all in</button><button class="l-tidy" data-act="larder-tidy" title="Fold piles of one kind together" aria-label="Tidy the basket">Tidy</button></div>
@@ -2088,6 +2206,7 @@
     <button class="menu-item hidden" data-act="leave" id="leave-item"><span class="e">🚪</span> <span class="l">Leave<span class="x"> playing together</span></span></button>
     <button class="menu-item" data-act="pick-outfit"><span class="e">🎩</span> <span class="l">Change your outfit<span class="x">: hat and cloak</span></span></button>
     <button class="menu-item" data-act="pick-name"><span class="e">✏️</span> <span class="l">Change your name</span></button>
+    <button class="menu-item" data-act="updates" id="updates-item"><span class="e">📜</span> <span class="l">What’s new<span class="x"></span></span></button>
     <button class="menu-item" data-act="ideas" title="Tell me what you'd love to see in the meadow"><span class="e">💌</span> <span class="l">Send an idea</span></button>
     <button class="menu-item danger" data-action="new">🔄 Start a new meadow…</button>
   </div>
@@ -2169,9 +2288,11 @@
 <script src="sound.js"></script>
 <script src="ground.js"></script>
 <script src="recipes.js"></script>
+<script src="board.js"></script>
 <script src="net.js"></script>
 <script src="friends.js"></script>
 <script src="stone.js"></script>
+<script src="updates.js"></script>
 <script src="game.js"></script>
 <script>
   // The meadow keeps its own time, and it should open with the signal gone: from the home screen on a plane, in a dead

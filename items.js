@@ -827,6 +827,39 @@ function paintPebbles(g) {
   pebble(g, 0.5, 0.36, 0.19, 0.15, -0.4, [234, 230, 220], 4, false);
 }
 
+// A flat stone: a slab of grey-brown river stone, seen at a slant, broad and thin. Its top an uneven round, faintly in layers,
+// speckled, lit on the left; its near edge a band of its thickness in shade; a crack across a corner and a little lichen.
+const SLAB = [158, 150, 134];
+function paintSlab(g) {
+  touch(g, 0, 0.5, 0.92, 0.16);
+  const top = (dy = 0) => {
+    g.beginPath();
+    for (let i = 0; i <= 40; i++) {
+      const a = i / 40 * TAU, r = 1 + 0.07 * Math.sin(3 * a + 0.7) + 0.04 * Math.sin(5 * a + 2.1);
+      const px = Math.cos(a) * 0.9 * r, py = Math.sin(a) * 0.5 * r - 0.02 + dy;
+      i ? g.lineTo(px, py) : g.moveTo(px, py);
+    }
+    g.closePath();
+  };
+  fillIn(g, rgba(tone(SLAB, 0.5)), () => top(0.16));                                         // its thickness, the near side
+  fillIn(g, rgba(tone(SLAB, 0.62)), () => top(0.1));
+  softIn(g, SLAB, -0.52, 0.48, () => top(), 1.22, 0.74);
+  g.save(); top(); g.clip();
+  furGlow(g, tone(SLAB, 1.2, 10), 0.5, -0.4, -0.18, 0.4, 0.22);                              // lit on the left
+  furGlow(g, tone(SLAB, 0.62), 0.45, 0.6, 0.18, 0.4, 0.3);                                    // its shade side
+  for (let i = 0; i < 4; i++) {                                                               // the layers it split along
+    const y = -0.32 + i * 0.2;
+    strokeIn(g, rgba(tone(SLAB, i % 2 ? 0.8 : 1.18, i % 2 ? 0 : 10), 0.45), 0.02, () => { g.moveTo(-0.95, y + 0.06); g.bezierCurveTo(-0.4, y - 0.04, 0.3, y + 0.08, 0.95, y - 0.02); });
+  }
+  fillIn(g, rgba(tone(SLAB, 0.6), 0.5), () => { for (let i = 0; i < 40; i++) ovalAt(g, (jit(5, i) - 0.5) * 1.7, (jit(5, i + 40) - 0.5) * 0.9, 0.012, 0.009); });
+  fillIn(g, rgba(tone(SLAB, 1.35, 20), 0.5), () => { for (let i = 0; i < 26; i++) ovalAt(g, (jit(6, i) - 0.5) * 1.7, (jit(6, i + 40) - 0.5) * 0.9, 0.01, 0.008); });
+  strokeIn(g, rgba(tone(SLAB, 0.42), 0.8), 0.022, () => { g.moveTo(-0.62, -0.42); g.lineTo(-0.5, -0.3); g.lineTo(-0.52, -0.18); g.lineTo(-0.38, -0.08); });   // a crack across a corner
+  g.restore();
+  fillIn(g, 'rgba(206, 214, 168, 0.9)', () => { ovalAt(g, 0.5, -0.24, 0.07, 0.04); ovalAt(g, 0.6, -0.16, 0.05, 0.03); ovalAt(g, 0.42, -0.14, 0.035, 0.025); });   // lichen
+  fillIn(g, 'rgba(226, 160, 70, 0.85)', () => { ovalAt(g, -0.66, 0.12, 0.05, 0.03); ovalAt(g, -0.58, 0.2, 0.03, 0.02); });
+  furGlow(g, [255, 255, 250], 0.3, -0.34, -0.26, 0.36, 0.12);                                // a matte sheen
+}
+
 // Dry grass: a twisted bundle of it, stems bleached gold and straw, some bowed over with oat-like seed heads, tied round
 // the middle with a few stems of its own.
 function paintDryGrass(g) {
@@ -958,6 +991,27 @@ function paintRope(g) {
   ropeLoop(g, -0.06, 0.24, 0.62, 0.32, 0);
   ropeLoop(g, 0.02, 0.1, 0.58, 0.3, 1);
   ropeLoop(g, -0.02, -0.04, 0.55, 0.29, 2);
+}
+
+// The fishing rod: two sticks lashed end to end, lying corner to corner, grass twine wound at the grip and the join, and
+// its line looping down from the tip to a red-tipped quill float and the thorn hook.
+function paintRodItem(g) {
+  touch(g, 0, 0.66, 0.78, 0.14);
+  const line = () => { g.moveTo(0.8, -0.8); g.bezierCurveTo(0.98, -0.3, 0.74, 0.28, 0.5, 0.36); g.bezierCurveTo(0.34, 0.42, 0.3, 0.24, 0.44, 0.18); };
+  strokeIn(g, 'rgba(236, 228, 206, 0.9)', 0.028, line);
+  stick(g, -0.84, 0.76, 0.1, -0.1, 0.15, [124, 84, 52], 1);
+  stick(g, -0.06, 0.06, 0.8, -0.8, 0.1, [140, 98, 60], 2);
+  const wind = (x, y, n, a) => strokeIn(g, rgba(tone(ROPE, 1.05)), 0.045, () => {
+    for (let i = 0; i < n; i++) { const t = (i - (n - 1) / 2) * 0.065, cx = x + Math.cos(a) * t, cy = y + Math.sin(a) * t; g.moveTo(cx - 0.1, cy - 0.085); g.lineTo(cx + 0.1, cy + 0.085); }
+  });
+  wind(-0.6, 0.52, 5, -0.78);                                                                // the grip
+  wind(0.02, -0.02, 3, -0.78);                                                               // the join
+  g.save(); g.translate(0.46, 0.2); g.rotate(0.35); g.scale(1.5, 1.5);                       // the float
+  fillIn(g, 'rgb(236, 226, 196)', () => ovalAt(g, 0, 0.03, 0.035, 0.1));
+  fillIn(g, 'rgb(206, 64, 48)', () => ovalAt(g, 0, -0.06, 0.035, 0.05));
+  furGlow(g, [255, 252, 240], 0.6, -0.012, -0.07, 0.014, 0.03);
+  g.restore();
+  strokeIn(g, 'rgb(90, 60, 40)', 0.034, () => { g.moveTo(0.5, 0.36); g.quadraticCurveTo(0.58, 0.46, 0.52, 0.5); });   // the thorn hook
 }
 
 // ------------------------------------------------------------------ dried on the rack
@@ -1263,6 +1317,342 @@ function paintDriedFish(g) {
   strokeIn(g, 'rgba(150, 120, 60, 0.8)', 0.016, () => { g.moveTo(0.38, -0.55); g.quadraticCurveTo(0.5, -0.5, 0.57, -0.64); });
 }
 
+// ------------------------------------------------------------------ more from the water
+
+// A freshwater mussel's shell, one half of it, along its own x: the narrow hinge end at -0.5, the broad end at 0.5, the
+// straighter hinge edge up top. Shut, it shows its outside: blue-black and glossy, rings of growth round the hinge end,
+// browner toward the broad end. Opened (inside up), a dark rim round pearly nacre, blue and pink in its sheen.
+const MUSSEL = [42, 50, 72], NACRE = [228, 228, 234];
+const musselPath = (g, s = 1, dx = 0) => {
+  g.moveTo(-0.5 * s + dx, 0.02 * s); g.bezierCurveTo(-0.44 * s + dx, -0.15 * s, -0.12 * s + dx, -0.25 * s, 0.26 * s + dx, -0.23 * s);
+  g.bezierCurveTo(0.5 * s + dx, -0.22 * s, 0.6 * s + dx, -0.02 * s, 0.5 * s + dx, 0.1 * s); g.bezierCurveTo(0.34 * s + dx, 0.24 * s, -0.16 * s + dx, 0.2 * s, -0.5 * s + dx, 0.02 * s); g.closePath();
+};
+function mussel(g, x, y, ang, s, inside) {
+  g.save(); g.translate(x, y); g.rotate(ang); g.scale(s, s);
+  const p = () => musselPath(g);
+  if (!inside) {
+    softIn(g, MUSSEL, -0.24, 0.2, p, 1.8, 0.5);
+    g.save(); g.beginPath(); p(); g.clip();
+    furGlow(g, [112, 96, 56], 0.5, 0.44, 0.04, 0.24, 0.26);                                   // browner at the broad end
+    furGlow(g, [96, 76, 128], 0.35, -0.3, -0.02, 0.24, 0.12);                                  // a violet bloom by the hinge
+    strokeIn(g, rgba(tone(MUSSEL, 2, 24), 0.32), 0.014, () => {                               // its rings of growth
+      for (let i = 1; i <= 5; i++) { const r = i * 0.19; g.moveTo(-0.5 + r * Math.cos(-1.1), 0.02 + r * 0.5 * Math.sin(-1.1)); g.ellipse(-0.5, 0.02, r, r * 0.5, 0.06, -1.1, 1.2); }
+    });
+    furGlow(g, [255, 255, 255], 0.6, -0.02, -0.13, 0.34, 0.035, -0.07);                        // the gloss along its back
+    furGlow(g, [196, 214, 240], 0.3, 0.12, 0.12, 0.28, 0.03, 0.12);
+    g.restore();
+    strokeIn(g, rgba(tone(MUSSEL, 0.4), 0.7), 0.014, p);
+  } else {
+    softIn(g, tone(MUSSEL, 0.9), -0.24, 0.2, p, 1.5, 0.6);                                     // the rim, the outside showing
+    const q = () => musselPath(g, 0.86, 0.035);
+    softIn(g, NACRE, -0.2, 0.18, q, 1.05, 0.8);
+    g.save(); g.beginPath(); q(); g.clip();
+    furGlow(g, [150, 182, 230], 0.55, -0.12, 0.06, 0.3, 0.12);                                 // blue in its sheen
+    furGlow(g, [240, 176, 196], 0.5, 0.26, -0.02, 0.2, 0.13);                                  // and pink
+    furGlow(g, [120, 116, 140], 0.45, 0.06, -0.19, 0.5, 0.07);                                 // the hollow in shade under its top edge
+    furGlow(g, [255, 255, 255], 0.75, 0.06, 0.07, 0.2, 0.035, -0.12);
+    g.restore();
+  }
+  g.restore();
+}
+// Mussels: two shut, and one gaping, its top half lifted on the hinge over the pearly inside of the other.
+function paintMussel(g) {
+  touch(g, 0, 0.68, 0.76, 0.18);
+  mussel(g, -0.16, -0.36, -0.42, 1.3, false);
+  mussel(g, 0.24, -0.06, 0.18, 1.3, false);
+  const hx = -0.62, hy = 0.42;                                                               // the open one's hinge
+  g.save(); g.translate(hx, hy); g.rotate(-0.32); mussel(g, 0.5 * 1.25, -0.02 * 1.25, 0, 1.25, false); g.restore();
+  g.save(); g.translate(hx, hy); g.rotate(0.05); mussel(g, 0.5 * 1.25, -0.02 * 1.25, 0, 1.25, true); g.restore();
+}
+
+// A pearl: one round and lustrous, cream with pink and blue moving in its sheen, sitting in the half shell it grew in.
+function pearlBall(g, x, y, r) {
+  furGlow(g, [70, 60, 80], 0.4, x + r * 0.2, y + r * 0.9, r * 1.0, r * 0.3);                  // its shadow in the shell
+  ball(g, x, y, r, r, [236, 228, 214], { lit: 1.1, dim: 0.7, gleam: 0, back: 0 });
+  g.save(); g.beginPath(); discAt(g, x, y, r); g.clip();
+  furGlow(g, [246, 182, 196], 0.55, x + r * 0.45, y + r * 0.35, r * 0.7, r * 0.6);
+  furGlow(g, [160, 196, 242], 0.5, x - r * 0.62, y + r * 0.32, r * 0.45, r * 0.6);
+  furGlow(g, [255, 246, 226], 0.5, x + r * 0.55, y + r * 0.75, r * 0.5, r * 0.22, -0.6);      // light thrown back up from the shell
+  g.restore();
+  furGlow(g, [255, 255, 255], 0.9, x - r * 0.34, y - r * 0.36, r * 0.38, r * 0.26, -0.7);
+  fillIn(g, 'rgba(255, 255, 255, 0.95)', () => ovalAt(g, x - r * 0.38, y - r * 0.42, r * 0.16, r * 0.09, -0.7));
+}
+function paintPearl(g) {
+  touch(g, 0, 0.56, 0.84, 0.16);
+  g.save(); g.translate(0, 0.14); g.scale(1, 1.35); mussel(g, 0, 0, -0.14, 1.7, true); g.restore();
+  pearlBall(g, 0.08, -0.04, 0.34);
+}
+
+// A crayfish, raw: the river's little lobster, brown-olive and speckled, seen from above crawling up and to the left, its
+// claws held out in front, long feelers sweeping past them, the tail in banded segments ending in a fan.
+const CRAY = [122, 104, 60], CRAY_DARK = [66, 56, 32];
+// A tapering limb from (x0, y0) to a point at (x1, y1), w wide at its root, plump by bulge.
+function taper(g, x0, y0, x1, y1, w, bulge = 0.3) {
+  const dx = x1 - x0, dy = y1 - y0, L = Math.hypot(dx, dy), nx = -dy / L * w, ny = dx / L * w;
+  g.moveTo(x0 + nx, y0 + ny);
+  g.quadraticCurveTo(x0 + dx * 0.5 + nx * (1 + bulge), y0 + dy * 0.5 + ny * (1 + bulge), x1, y1);
+  g.quadraticCurveTo(x0 + dx * 0.5 - nx * (1 + bulge), y0 + dy * 0.5 - ny * (1 + bulge), x0 - nx, y0 - ny);
+  g.closePath();
+}
+function paintCrayfish(g) {
+  touch(g, 0, 0.74, 0.56, 0.16);
+  g.save(); g.rotate(-0.4); g.scale(0.98, 0.98); g.translate(0.02, 0.1);
+  strokeIn(g, rgba(CRAY_DARK, 0.85), 0.018, () => {                                          // the feelers
+    g.moveTo(-0.05, -0.5); g.bezierCurveTo(-0.14, -0.78, -0.4, -0.9, -0.66, -0.94);
+    g.moveTo(0.05, -0.5); g.bezierCurveTo(0.2, -0.8, 0.46, -0.84, 0.72, -0.78);
+  });
+  strokeIn(g, rgba(CRAY_DARK, 0.8), 0.014, () => { for (const s of [-1, 1]) { g.moveTo(s * 0.03, -0.52); g.quadraticCurveTo(s * 0.06, -0.64, s * 0.12, -0.68); } });
+  for (let i = 0; i < 4; i++) for (const s of [-1, 1]) {                                      // the walking legs
+    const y = -0.2 + i * 0.075, p = () => { g.moveTo(s * 0.1, y); g.lineTo(s * (0.3 + i * 0.01), y - 0.04 + i * 0.03); g.lineTo(s * (0.36 + i * 0.015), y + 0.08 + i * 0.05); };
+    strokeIn(g, rgba(tone(CRAY, 0.55)), 0.05, p);
+    strokeIn(g, rgba(tone(CRAY, 0.95)), 0.034, p);
+  }
+  // The tail fan: the middle plate and two pairs either side.
+  const fanC = tone(CRAY, 0.92);
+  for (const [x, y, rx, ry, a] of [[-0.22, 0.7, 0.08, 0.14, 0.8], [0.22, 0.7, 0.08, 0.14, -0.8], [-0.13, 0.75, 0.08, 0.15, 0.35], [0.13, 0.75, 0.08, 0.15, -0.35]]) {
+    softIn(g, fanC, y - ry, y + ry, () => ovalAt(g, x, y, rx, ry, a), 1.3, 0.62);
+    strokeIn(g, rgba(tone(CRAY, 1.5, 20), 0.5), 0.01, () => ovalAt(g, x, y, rx * 0.9, ry * 0.9, a));
+  }
+  softIn(g, fanC, 0.6, 0.86, () => { g.moveTo(-0.06, 0.6); g.lineTo(-0.1, 0.82); g.quadraticCurveTo(0, 0.88, 0.1, 0.82); g.lineTo(0.06, 0.6); g.closePath(); }, 1.3, 0.62);
+  for (let i = 4; i >= 0; i--) {                                                              // the tail's segments, each over the one behind
+    const y = 0.15 + i * 0.095, rx = 0.2 - i * 0.016;
+    softIn(g, CRAY, y - 0.07, y + 0.07, () => ovalAt(g, 0, y, rx, 0.072), 1.4, 0.55);
+    furGlow(g, [255, 250, 220], 0.3, -rx * 0.35, y - 0.025, rx * 0.4, 0.02);
+    strokeIn(g, rgba(CRAY_DARK, 0.6), 0.012, () => g.ellipse(0, y, rx, 0.072, 0, 0.15, Math.PI - 0.15));
+  }
+  for (const s of [-1, 1]) {                                                                  // the claws: arm, then the big pincer
+    const arm = () => { g.moveTo(s * 0.1, -0.34); g.quadraticCurveTo(s * 0.3, -0.38, s * 0.27, -0.54); };
+    strokeIn(g, rgba(tone(CRAY, 0.55)), 0.1, arm);
+    strokeIn(g, rgba(CRAY), 0.074, arm);
+    g.save(); g.translate(-0.012, -0.012); strokeIn(g, rgba(tone(CRAY, 1.35, 20), 0.6), 0.02, arm); g.restore();
+    const px = s * 0.27, py = -0.62;
+    softIn(g, CRAY, -0.94, -0.6, () => { taper(g, px - s * 0.05, py - 0.06, s * 0.19, -0.93, 0.055, 0.25); taper(g, px + s * 0.055, py - 0.06, s * 0.35, -0.9, 0.06, 0.3); }, 1.35, 0.6);
+    strokeIn(g, rgba(CRAY_DARK, 0.45), 0.012, () => { taper(g, px - s * 0.05, py - 0.06, s * 0.19, -0.93, 0.055, 0.25); taper(g, px + s * 0.055, py - 0.06, s * 0.35, -0.9, 0.06, 0.3); });
+    softIn(g, CRAY, py - 0.13, py + 0.13, () => ovalAt(g, px, py, 0.1, 0.15, s * 0.2), 1.4, 0.55);
+    fillIn(g, rgba([168, 90, 50], 0.6), () => { discAt(g, s * 0.195, -0.91, 0.018); discAt(g, s * 0.345, -0.88, 0.018); });   // a red flush at the tips
+    fillIn(g, rgba(tone(CRAY, 1.6, 20), 0.55), () => { for (let i = 0; i < 7; i++) discAt(g, px + (jit(31, i + s * 9) - 0.5) * 0.12, py + (jit(32, i + s * 9) - 0.5) * 0.16, 0.009); });   // its bumps
+    furGlow(g, [255, 250, 220], 0.45, px - 0.035, py - 0.05, 0.035, 0.05, s * 0.2);
+    strokeIn(g, rgba(CRAY_DARK, 0.5), 0.012, () => ovalAt(g, px, py, 0.1, 0.15, s * 0.2));
+  }
+  const shell = () => {                                                                      // the head and body under one shell
+    g.moveTo(0, -0.58); g.lineTo(0.05, -0.47); g.bezierCurveTo(0.2, -0.44, 0.25, -0.2, 0.21, 0.02); g.quadraticCurveTo(0.18, 0.13, 0, 0.13);
+    g.quadraticCurveTo(-0.18, 0.13, -0.21, 0.02); g.bezierCurveTo(-0.25, -0.2, -0.2, -0.44, -0.05, -0.47); g.closePath();
+  };
+  softIn(g, CRAY, -0.58, 0.13, shell, 1.4, 0.55);
+  g.save(); g.beginPath(); shell(); g.clip();
+  furGlow(g, tone(CRAY, 0.6), 0.5, 0.12, -0.1, 0.1, 0.3);
+  furGlow(g, [255, 250, 224], 0.45, -0.07, -0.24, 0.05, 0.16);
+  fillIn(g, rgba(CRAY_DARK, 0.5), () => { for (let i = 0; i < 18; i++) discAt(g, (jit(33, i) - 0.5) * 0.3, -0.42 + jit(34, i) * 0.52, 0.008 + jit(35, i) * 0.008); });
+  g.restore();
+  strokeIn(g, rgba(CRAY_DARK, 0.6), 0.014, () => { g.moveTo(-0.19, -0.16); g.quadraticCurveTo(0, -0.1, 0.19, -0.16); g.moveTo(0, -0.46); g.lineTo(0, -0.18); });   // its groove and ridge
+  strokeIn(g, rgba(CRAY_DARK, 0.5), 0.012, shell);
+  for (const s of [-1, 1]) { fillIn(g, 'rgb(24, 20, 14)', () => discAt(g, s * 0.06, -0.47, 0.025)); fillIn(g, 'rgba(255, 255, 255, 0.85)', () => discAt(g, s * 0.06 - 0.008, -0.478, 0.008)); }
+  g.restore();
+}
+
+// Water mint: a wet sprig of it off the hook, the square stem flushed purple, the leaves in pairs, oval and toothed, dark
+// green tinged purple at their bases, a round head of lilac flowers at the top and drops of water still on it.
+const MINT = [70, 122, 62], MINT_STEM = [128, 84, 100], MINT_FLOWER = [194, 158, 214];
+const mintW = t => Math.pow(Math.sin(Math.PI * Math.min(1, t * 0.94 + 0.06)), 0.8);
+function mintLeaf(g, x, y, ang, len) {
+  len *= 1.18;
+  const w = t => len * 0.4 * mintW(t);
+  leaf(g, x, y, ang, len, w, MINT, { teeth: 8, depth: 0.2, veins: 4, sheen: 0.42, round: true });
+  g.save(); g.translate(x, y); g.rotate(ang); g.beginPath(); leafPath(g, len, w, 8, 0.2, 0, false, true); g.clip();
+  furGlow(g, [110, 60, 104], 0.5, 0, 0, len * 0.4, len * 0.34);                               // purple at its base
+  furGlow(g, [100, 56, 96], 0.35, len * 0.3, -len * 0.5, len * 0.12, len * 0.5);              // and round its far edge
+  g.restore();
+}
+function drop(g, x, y, r) {
+  fillIn(g, 'rgba(214, 236, 246, 0.42)', () => discAt(g, x, y, r));
+  strokeIn(g, 'rgba(40, 70, 70, 0.3)', r * 0.25, () => g.arc(x, y, r * 0.88, 0.2, Math.PI - 0.2));
+  fillIn(g, 'rgba(255, 255, 255, 0.95)', () => discAt(g, x - r * 0.35, y - r * 0.35, r * 0.3));
+}
+function paintWatermint(g) {
+  touch(g, 0, 0.86, 0.44, 0.16);
+  g.save(); g.translate(0, -0.02); g.scale(1.12, 1.12);
+  stalk(g, 0.08, 0.8, 0.0, 0.2, 0.02, -0.5, 0.05, MINT_STEM);
+  stalk(g, 0.04, 0.3, 0.22, 0.1, 0.42, -0.1, 0.035, MINT_STEM);                              // a side shoot
+  strokeIn(g, rgba(tone(MINT_STEM, 1.4, 20), 0.6), 0.012, () => { g.moveTo(0.1, 0.78); g.quadraticCurveTo(0.02, 0.2, 0.035, -0.48); });   // the stem's square edge
+  mintLeaf(g, 0.05, 0.5, -1.2, 0.5);
+  mintLeaf(g, 0.06, 0.5, 1.15, 0.48);
+  mintLeaf(g, 0.33, -0.04, -0.25, 0.32);
+  mintLeaf(g, 0.33, -0.04, 1.5, 0.3);
+  mintLeaf(g, 0.02, 0.06, -1.05, 0.42);
+  mintLeaf(g, 0.03, 0.06, 0.95, 0.38);
+  mintLeaf(g, 0.02, -0.36, -0.8, 0.28);
+  mintLeaf(g, 0.03, -0.36, 0.75, 0.26);
+  // The flower head: a round crowd of tiny lilac flowers.
+  furGlow(g, [80, 50, 90], 0.35, 0.04, -0.52, 0.2, 0.12);
+  for (let i = 0; i < 26; i++) {
+    const a = jit(41, i) * TAU, r = Math.sqrt(jit(42, i)) * 0.16, x = 0.02 + Math.cos(a) * r, y = -0.62 + Math.sin(a) * r * 0.85;
+    ball(g, x, y, 0.045, 0.045, tone(MINT_FLOWER, 0.85 + jit(43, i) * 0.3), { lit: 1.3, dim: 0.6, gleam: 0, back: 0 });
+  }
+  fillIn(g, 'rgba(116, 64, 128, 0.7)', () => { for (let i = 0; i < 14; i++) { const a = jit(44, i) * TAU, r = jit(45, i) * 0.15; discAt(g, 0.02 + Math.cos(a) * r + 0.012, -0.61 + Math.sin(a) * r * 0.8 + 0.014, 0.012); } });   // the dark hearts between them
+  furGlow(g, [255, 246, 255], 0.4, -0.04, -0.7, 0.07, 0.04);
+  drop(g, -0.3, 0.38, 0.04); drop(g, 0.28, 0.44, 0.032); drop(g, 0.16, -0.12, 0.028); drop(g, -0.18, 0.02, 0.026);
+  g.restore();
+}
+
+// ------------------------------------------------------------------ treasures out of the water
+
+// A corked glass bottle lying at a slant, a note inside: glass of a colour and how clear (a, its body's alpha), s its size,
+// note 'bark' (a curl of birch bark), 'roll' (a rolled paper tied with thread) or 'fold' (a paper folded small). The note
+// goes in first so the glass tints it; then the glass, darker at its edges, a long gleam down its top and a fainter one
+// under, the thick ring of its base, its lip, and a cork pushed in.
+function bottle(g, x, y, ang, s, glass, a, note, murk = 0) {
+  g.save(); g.translate(x, y); g.rotate(ang); g.scale(s, s);
+  const B = 0.27, N = 0.1;
+  const body = () => {
+    g.moveTo(-0.5, -B); g.lineTo(0.12, -B); g.bezierCurveTo(0.3, -B, 0.3, -N, 0.42, -N); g.lineTo(0.6, -N);
+    g.lineTo(0.6, N); g.lineTo(0.42, N); g.bezierCurveTo(0.3, N, 0.3, B, 0.12, B); g.lineTo(-0.5, B);
+    g.ellipse(-0.5, 0, 0.09, B, 0, Math.PI / 2, Math.PI * 1.5); g.closePath();
+  };
+  furGlow(g, tone(glass, 0.5), 0.25, -0.1, B + 0.04, 0.6, 0.06);                               // its coloured shadow
+  if (note === 'fold') {
+    g.save(); g.rotate(-0.12);
+    softIn(g, [238, 226, 196], -0.14, 0.14, () => { g.moveTo(-0.3, -0.13); g.lineTo(0.08, -0.15); g.lineTo(0.1, 0.13); g.lineTo(-0.28, 0.15); g.closePath(); }, 1.05, 0.82);
+    strokeIn(g, 'rgba(150, 120, 80, 0.7)', 0.014, () => { g.moveTo(-0.11, -0.14); g.lineTo(-0.09, 0.14); });
+    fillIn(g, 'rgba(120, 96, 70, 0.25)', () => { g.moveTo(-0.11, -0.14); g.lineTo(0.08, -0.15); g.lineTo(0.1, 0.13); g.lineTo(-0.09, 0.14); g.closePath(); });
+    g.restore();
+  } else {
+    const paper = note === 'bark' ? [240, 232, 214] : [236, 220, 184], r = 0.105, x0 = -0.36, x1 = 0.08;
+    softIn(g, paper, -r, r, () => { g.moveTo(x0, -r); g.lineTo(x1, -r); g.ellipse(x1, 0, r * 0.4, r, 0, -Math.PI / 2, Math.PI / 2); g.lineTo(x0, r); g.ellipse(x0, 0, r * 0.4, r, 0, Math.PI / 2, Math.PI * 1.5); g.closePath(); }, 1.1, 0.66);
+    fillIn(g, rgba(tone(paper, 0.82)), () => ovalAt(g, x1, 0, r * 0.4, r));                   // its end, the roll's curl in it
+    strokeIn(g, rgba(tone(paper, 0.55), 0.8), 0.012, () => { g.moveTo(x1 + 0.03, 0); g.ellipse(x1, 0, r * 0.3, r * 0.75, 0, 0, Math.PI * 1.6); g.moveTo(x1 + 0.015, 0); g.ellipse(x1, 0, r * 0.15, r * 0.4, 0, 0, Math.PI * 1.4); });
+    if (note === 'bark') fillIn(g, 'rgba(60, 46, 36, 0.7)', () => { for (let i = 0; i < 6; i++) ovalAt(g, x0 + 0.05 + i * 0.065, (jit(51, i) - 0.5) * r * 1.2, 0.02, 0.006); });   // birch's dark marks
+    else strokeIn(g, 'rgb(176, 52, 40)', 0.026, () => { g.moveTo(-0.14, -r); g.lineTo(-0.14, r); });   // the thread round it
+  }
+  fillIn(g, rgba(glass, a), body);
+  g.save(); g.beginPath(); body(); g.clip();
+  furGlow(g, tone(glass, 0.55), 0.45, 0, B * 0.8, 0.7, B * 0.5);                              // deeper toward its lower side
+  if (murk) { furGlow(g, [230, 236, 220], murk, -0.1, 0, 0.6, 0.3); fillIn(g, rgba(tone(glass, 0.5), 0.5), () => { for (let i = 0; i < 14; i++) discAt(g, -0.5 + jit(52, i) * 0.9, (jit(53, i) - 0.3) * B * 1.6, 0.008 + jit(54, i) * 0.012); }); }
+  strokeIn(g, rgba(tone(glass, 0.5), 0.75), 0.06, body);                                      // the glass looks thick at its edges
+  g.restore();
+  strokeIn(g, rgba(tone(glass, 0.42), 0.8), 0.014, body);
+  strokeIn(g, 'rgba(255, 255, 255, 0.85)', 0.04, () => { g.moveTo(-0.44, -B * 0.62); g.lineTo(0.1, -B * 0.62); });   // the gleam
+  strokeIn(g, 'rgba(255, 255, 255, 0.6)', 0.022, () => { g.moveTo(0.36, -N * 0.95 - 0.02); g.lineTo(0.54, -N * 0.5); });
+  strokeIn(g, 'rgba(255, 255, 255, 0.3)', 0.026, () => { g.moveTo(-0.38, B * 0.7); g.lineTo(0.06, B * 0.7); });
+  strokeIn(g, rgba(tone(glass, 0.6), 0.7), 0.04, () => g.ellipse(-0.5, 0, 0.07, B * 0.8, 0, -Math.PI / 2, Math.PI / 2));   // the base's thick ring
+  softIn(g, glass, -N - 0.03, N + 0.03, () => { g.moveTo(0.56, -N - 0.03); g.lineTo(0.64, -N - 0.03); g.lineTo(0.64, N + 0.03); g.lineTo(0.56, N + 0.03); g.closePath(); }, 1.3, 0.6);   // the lip
+  const cork = () => { g.moveTo(0.62, -N * 0.9); g.lineTo(0.8, -N * 1.05); g.quadraticCurveTo(0.84, 0, 0.8, N * 1.05); g.lineTo(0.62, N * 0.9); g.closePath(); };
+  softIn(g, [186, 140, 88], -N, N, cork, 1.3, 0.6);
+  fillIn(g, 'rgba(110, 76, 40, 0.6)', () => { for (let i = 0; i < 6; i++) discAt(g, 0.67 + jit(55, i) * 0.12, (jit(56, i) - 0.5) * N * 1.4, 0.01); });
+  g.restore();
+}
+function paintBottle1(g) { touch(g, 0, 0.6, 0.8, 0.12); bottle(g, -0.06, 0.04, -0.52, 1.3, [200, 230, 226], 0.32, 'bark'); }
+function paintBottle2(g) { touch(g, 0, 0.6, 0.8, 0.14); bottle(g, -0.06, 0.04, -0.52, 1.3, [74, 128, 76], 0.6, 'roll', 0.18); }
+function paintBottle3(g) { touch(g, 0, 0.42, 0.56, 0.14); bottle(g, -0.04, 0.0, -0.5, 1.05, [52, 86, 184], 0.55, 'fold'); }
+
+// An old copper pot out of the river: warm copper, dented, green crusts of verdigris over it, two small lugs at its sides,
+// its rolled rim and the dark of its inside, lit on the far wall.
+const COPPER = [190, 104, 56], VERD = [96, 170, 140];
+function paintCopperPot(g) {
+  touch(g, 0, 0.62, 0.74, 0.22);
+  const R = 0.62, Ry = 0.18, T = -0.26;
+  for (const s of [-1, 1]) {                                                                  // the lugs
+    const p = () => g.ellipse(s * (R + 0.06), T + 0.08, 0.11, 0.07, s * 0.3, 0, TAU);
+    strokeIn(g, rgba(tone(COPPER, 0.55)), 0.07, p);
+    strokeIn(g, rgba(COPPER), 0.045, p);
+    strokeIn(g, rgba(tone(COPPER, 1.35, 24), 0.7), 0.014, () => g.ellipse(s * (R + 0.06), T + 0.07, 0.11, 0.07, s * 0.3, Math.PI, TAU));
+  }
+  const body = () => { g.moveTo(-R, T); g.bezierCurveTo(-R - 0.06, 0.14, -0.5, 0.6, 0, 0.6); g.bezierCurveTo(0.5, 0.6, R + 0.06, 0.14, R, T); g.ellipse(0, T, R, Ry, 0, 0, Math.PI); g.closePath(); };
+  fillIn(g, rgba(COPPER), body);
+  g.save(); g.beginPath(); body(); g.clip();
+  furGlow(g, tone(COPPER, 0.5), 0.75, 0.52, 0.2, 0.32, 0.6);                                  // round: its shade side
+  furGlow(g, tone(COPPER, 0.45), 0.6, 0, 0.62, 0.7, 0.2);
+  furGlow(g, [255, 196, 140], 0.75, -0.34, 0.04, 0.12, 0.36);                                 // and the shine down its lit side
+  furGlow(g, [255, 240, 220], 0.7, -0.36, -0.02, 0.035, 0.2);
+  furGlow(g, [255, 170, 110], 0.3, 0.46, 0.34, 0.1, 0.2);                                     // light thrown back on its far edge
+  for (const [x, y, r] of [[0.14, 0.1, 0.1], [-0.12, 0.38, 0.07]]) {                         // dents
+    furGlow(g, tone(COPPER, 0.4), 0.6, x + r * 0.25, y + r * 0.2, r, r * 0.8);
+    furGlow(g, [255, 210, 160], 0.55, x - r * 0.45, y - r * 0.35, r * 0.45, r * 0.3, -0.6);
+  }
+  for (const [cx, cy, n, sp, k] of [[0.34, 0.36, 14, 0.18, 61], [-0.44, 0.22, 9, 0.12, 62], [0.0, 0.52, 10, 0.2, 63], [0.4, -0.06, 6, 0.1, 64]]) {   // verdigris in crusts
+    for (let i = 0; i < n; i++) furGlow(g, tone(VERD, 0.85 + jit(k, i) * 0.35), 0.8, cx + (jit(k, i + 20) - 0.5) * sp * 2, cy + (jit(k, i + 40) - 0.5) * sp, 0.03 + jit(k, i + 60) * 0.04, 0.025 + jit(k, i + 80) * 0.03, 0, 0.5);
+  }
+  fillIn(g, rgba(tone(VERD, 1.2, 20), 0.8), () => { for (let i = 0; i < 20; i++) discAt(g, (jit(65, i) - 0.5) * 1.2, -0.1 + jit(66, i) * 0.66, 0.008 + jit(67, i) * 0.01); });
+  g.restore();
+  // The inside: dark, its far wall catching the light from the left.
+  fillIn(g, rgba([84, 38, 20]), () => ovalAt(g, 0, T, R * 0.93, Ry * 0.82));
+  g.save(); g.beginPath(); ovalAt(g, 0, T, R * 0.93, Ry * 0.82); g.clip();
+  furGlow(g, [214, 120, 64], 0.75, 0.2, T - Ry * 0.5, 0.5, Ry * 0.5);
+  furGlow(g, VERD, 0.6, -0.3, T - Ry * 0.4, 0.12, 0.06, 0, 0.4);
+  g.restore();
+  strokeIn(g, rgba(tone(COPPER, 0.6)), 0.06, () => ovalAt(g, 0, T, R * 0.965, Ry * 0.9));   // the rolled rim
+  strokeIn(g, rgba(tone(COPPER, 1.1, 10)), 0.042, () => ovalAt(g, 0, T - 0.005, R * 0.965, Ry * 0.9));
+  strokeIn(g, rgba([255, 226, 190], 0.8), 0.016, () => g.ellipse(0, T - 0.01, R * 0.965, Ry * 0.9, 0, Math.PI * 1.05, Math.PI * 1.55));
+  furGlow(g, VERD, 0.85, 0.42, T + 0.1, 0.07, 0.04, 0, 0.5);
+}
+
+// A fisher's flat cap, lost off a boat long ago: soft weathered wool, dark teal flecked like tweed, the crown laid forward
+// over a short stiff brim, a seam down its middle, faded on top where the sun had it.
+const CAP = [48, 86, 92];
+function paintCap(g) {
+  touch(g, 0.04, 0.5, 0.84, 0.22);
+  g.save(); g.translate(0.04, 0.04);
+  // The brim, sticking out to the front (left) from under the crown: its top face, the stitching round it, its edge.
+  const brim = () => { g.moveTo(-0.1, 0.27); g.bezierCurveTo(-0.36, 0.56, -0.8, 0.48, -0.88, 0.22); g.bezierCurveTo(-0.78, 0.12, -0.6, 0.06, -0.44, 0.06); g.closePath(); };
+  softIn(g, tone(CAP, 1.05), 0.06, 0.5, brim, 1.25, 0.55);
+  strokeIn(g, rgba(tone(CAP, 1.6, 24), 0.55), 0.012, () => { g.moveTo(-0.2, 0.3); g.bezierCurveTo(-0.4, 0.46, -0.72, 0.42, -0.8, 0.24); });
+  strokeIn(g, rgba(tone(CAP, 0.45), 0.7), 0.016, () => { g.moveTo(-0.1, 0.27); g.bezierCurveTo(-0.36, 0.56, -0.8, 0.48, -0.88, 0.22); });
+  const crown = () => {
+    g.moveTo(-0.52, 0.12); g.bezierCurveTo(-0.44, -0.2, -0.02, -0.46, 0.38, -0.42); g.bezierCurveTo(0.78, -0.38, 0.88, -0.02, 0.74, 0.18);
+    g.bezierCurveTo(0.5, 0.34, 0.04, 0.34, -0.14, 0.28); g.bezierCurveTo(-0.3, 0.24, -0.46, 0.2, -0.52, 0.12); g.closePath();
+  };
+  furGlow(g, [10, 20, 24], 0.55, -0.36, 0.24, 0.26, 0.08, -0.3);                               // the crown's shadow on the brim
+  softIn(g, CAP, -0.44, 0.32, crown, 1.3, 0.6);
+  g.save(); g.beginPath(); crown(); g.clip();
+  furGlow(g, tone(CAP, 0.5), 0.65, 0.66, 0.1, 0.3, 0.36);                                     // round: its far side
+  furGlow(g, [150, 172, 164], 0.4, 0.06, -0.26, 0.42, 0.14, -0.2);                            // faded on top where the sun had it
+  furGlow(g, tone(CAP, 0.45), 0.6, 0.2, 0.36, 0.7, 0.12);                                     // its band along the foot, in shade
+  fillIn(g, rgba(tone(CAP, 1.8, 30), 0.45), () => { for (let i = 0; i < 70; i++) ovalAt(g, -0.6 + jit(71, i) * 1.5, -0.45 + jit(72, i) * 0.8, 0.014, 0.006, jit(73, i) * 3); });   // the tweed's flecks
+  fillIn(g, rgba(tone(CAP, 0.5), 0.5), () => { for (let i = 0; i < 50; i++) ovalAt(g, -0.6 + jit(74, i) * 1.5, -0.45 + jit(75, i) * 0.8, 0.012, 0.005, jit(76, i) * 3); });
+  g.restore();
+  const seam = () => { g.moveTo(-0.46, 0.1); g.bezierCurveTo(-0.2, -0.16, 0.24, -0.3, 0.7, -0.14); };   // the seam over its top, front to back
+  strokeIn(g, rgba(tone(CAP, 0.5), 0.75), 0.022, seam);
+  g.save(); g.translate(0, -0.018); strokeIn(g, rgba(tone(CAP, 1.6, 24), 0.4), 0.01, seam); g.restore();
+  strokeIn(g, rgba(tone(CAP, 1.5, 20), 0.5), 0.014, () => { g.moveTo(-0.5, 0.16); g.bezierCurveTo(-0.3, 0.26, 0.3, 0.36, 0.72, 0.2); });   // the edge of its band
+  strokeIn(g, rgba(tone(CAP, 0.4), 0.55), 0.014, crown);
+  softIn(g, CAP, 0.02, 0.14, () => discAt(g, -0.42, 0.11, 0.04), 1.6, 0.6);                    // the stud that holds its front down
+  g.restore();
+}
+
+// An oilskin cloak hung on a peg by its hood: waxed mustard-yellow, stiff and shiny along its folds, the navy lining
+// showing down the parted front and in the hood, wooden toggles down one edge.
+const OIL = [214, 166, 50], NAVY = [34, 44, 82];
+function paintOilskin(g) {
+  touch(g, 0, 0.86, 0.66, 0.18);
+  strokeIn(g, 'rgb(96, 64, 40)', 0.07, () => { g.moveTo(-0.06, -0.86); g.lineTo(0.06, -0.86); });
+  const hood = () => { g.moveTo(-0.3, -0.42); g.bezierCurveTo(-0.34, -0.7, -0.14, -0.88, 0, -0.86); g.bezierCurveTo(0.14, -0.88, 0.34, -0.7, 0.3, -0.42); g.closePath(); };
+  softIn(g, OIL, -0.88, -0.42, hood, 1.25, 0.66);
+  softIn(g, NAVY, -0.76, -0.44, () => { g.moveTo(-0.2, -0.46); g.bezierCurveTo(-0.22, -0.66, -0.08, -0.76, 0, -0.75); g.bezierCurveTo(0.08, -0.76, 0.22, -0.66, 0.2, -0.46); g.closePath(); }, 0.8, 1.3);   // its lining, in shade
+  furGlow(g, [255, 250, 220], 0.5, -0.2, -0.66, 0.04, 0.1, 0.4);
+  const coat = () => {
+    g.moveTo(-0.16, -0.5); g.bezierCurveTo(-0.32, -0.5, -0.46, -0.44, -0.48, -0.32); g.bezierCurveTo(-0.52, 0.0, -0.62, 0.46, -0.68, 0.78);
+    for (let i = 1; i <= 24; i++) { const t = i / 24, x = -0.68 + t * 1.36; g.lineTo(x, 0.8 + 0.035 * Math.sin(t * TAU * 3.2) - 0.04 * Math.sin(Math.PI * t)); }
+    g.bezierCurveTo(0.62, 0.46, 0.52, 0.0, 0.48, -0.32); g.bezierCurveTo(0.46, -0.44, 0.32, -0.5, 0.16, -0.5); g.closePath();
+  };
+  softIn(g, OIL, -0.5, 0.82, coat, 1.2, 0.68);
+  g.save(); g.beginPath(); coat(); g.clip();
+  for (const [x, y, w, h, a] of [[-0.36, 0.34, 0.06, 0.5, 0.1], [0.32, 0.32, 0.07, 0.52, -0.1], [-0.12, 0.42, 0.04, 0.4, 0.03], [0.5, 0.2, 0.12, 0.7, -0.1]]) furGlow(g, tone(OIL, 0.55), 0.6, x, y, w, h, a);   // the folds' shade
+  strokeIn(g, 'rgba(255, 252, 230, 0.65)', 0.02, () => {                                     // and the wax shining on their ridges
+    g.moveTo(-0.28, -0.1); g.quadraticCurveTo(-0.3, 0.3, -0.26, 0.7); g.moveTo(-0.5, 0.1); g.quadraticCurveTo(-0.54, 0.4, -0.56, 0.68);
+    g.moveTo(0.2, -0.04); g.quadraticCurveTo(0.22, 0.34, 0.2, 0.7);
+  });
+  furGlow(g, [255, 250, 226], 0.55, -0.3, -0.36, 0.12, 0.05, -0.3);                          // a shoulder catching the light
+  // The front parted from the throat down, the navy lining between.
+  softIn(g, NAVY, -0.46, 0.84, () => { g.moveTo(-0.02, -0.46); g.quadraticCurveTo(-0.08, 0.2, -0.2, 0.84); g.lineTo(0.18, 0.84); g.quadraticCurveTo(0.06, 0.2, 0.02, -0.46); g.closePath(); }, 1.3, 0.7);
+  g.restore();
+  strokeIn(g, rgba(tone(OIL, 0.55), 0.8), 0.018, () => { g.moveTo(-0.02, -0.46); g.quadraticCurveTo(-0.08, 0.2, -0.2, 0.8); g.moveTo(0.02, -0.46); g.quadraticCurveTo(0.06, 0.2, 0.18, 0.8); });
+  strokeIn(g, rgba(tone(OIL, 0.6), 0.6), 0.014, coat);
+  for (let i = 0; i < 3; i++) {                                                               // the toggles, each on a loop
+    const y = -0.32 + i * 0.24, x = -0.04 - i * 0.03;
+    strokeIn(g, 'rgba(60, 40, 26, 0.8)', 0.014, () => { g.moveTo(x, y); g.lineTo(x + 0.1, y); });
+    softIn(g, [150, 100, 60], y - 0.03, y + 0.03, () => ovalAt(g, x - 0.04, y, 0.06, 0.022, -0.1), 1.4, 0.6);
+  }
+}
+
 // The painted things by their ids, in the order of their numbers ('ingr:' + n): a new one goes at the end.
 const PAINTED = [
   ['cep', paintCep],
@@ -1299,6 +1689,18 @@ const PAINTED = [
   ['trout', paintTrout],
   ['eel', paintEel],
   ['driedfish', paintDriedFish],
+  ['rod', paintRodItem],
+  ['slab', paintSlab],
+  ['mussel', paintMussel],
+  ['crayfish', paintCrayfish],
+  ['watermint', paintWatermint],
+  ['pearl', paintPearl],
+  ['bottle1', paintBottle1],
+  ['bottle2', paintBottle2],
+  ['bottle3', paintBottle3],
+  ['copperpot', paintCopperPot],
+  ['cap', paintCap],
+  ['oilskin', paintOilskin],
 ];
 const NAMES = PAINTED.map(p => p[0]);
 function paint(g, size, U, n) {

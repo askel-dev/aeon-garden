@@ -1,0 +1,413 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>cooking lab</title>
+<!-- A test of cooking by hand, away from the meadow (PLAN.md stage 12, the rethink of step 3, 2026-10-22): two scenes seen
+     from above, the chopping board and the campfire's pot, a brass arrow on the side to go between them. Swipe through a thing
+     to cut it, as in Fruit Ninja (no knife, a glowing trail): the line splits it into two pieces, each the same painting clipped to its side, so you see your own cut, and the
+     pieces can be cut again. Drag a piece slowly to sweep it: off the board's right edge and it waits at
+     the fire, on a flat stone; pushed into the pot it drops in. Drag round in the pot to stir. A toy first, no score: is
+     cutting satisfying? The things are items.js's paintings, painted once big; each piece is painted once as it's cut. The
+     board itself (cutting, sweeping, the juice) is board.js, the same code as the board at the fire in the game: tune it here. -->
+<script src="fur.js"></script>
+<script src="items.js"></script>
+<script src="sound.js"></script>
+<script src="board.js"></script>
+<style>
+  @font-face { font-family: 'Fraunces'; font-style: normal; font-weight: 600 680; font-display: swap;
+    src: url(assets/fonts/fraunces-normal-latin.woff2) format('woff2'); }
+  @font-face { font-family: 'Nunito'; font-style: normal; font-weight: 500 900; font-display: swap;
+    src: url(assets/fonts/nunito-normal-latin.woff2) format('woff2'); }
+  :root { --card: #f8f0de; --ink: #3b372f; --muted: #6f6657; --line: #ecdfc8; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #3f5a2c; color: var(--ink);
+    font: 14px/1.3 Nunito, ui-rounded, system-ui, sans-serif; touch-action: none; user-select: none; -webkit-user-select: none; }
+  canvas#lab { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: none; }
+  /* a round brass button: the arrows to the other scene */
+  .bb { position: fixed; top: 50%; z-index: 3; display: grid; place-items: center; width: 52px; height: 52px; margin-top: -26px; padding: 0;
+    border: none; border-radius: 50%; cursor: pointer; background: linear-gradient(180deg, #fffaf0, #f1e5c9);
+    box-shadow: inset 0 0 0 1.5px #d2b06a, 0 2px 0 #a8742a, 0 6px 16px rgba(40, 30, 10, 0.25); transition: transform 0.08s, box-shadow 0.08s, opacity 0.25s; }
+  .bb:active { transform: translateY(2px); box-shadow: inset 0 0 0 1.5px #d2b06a, 0 0 0 #a8742a; }
+  .bb svg { width: 22px; height: 22px; }
+  .bb.hide { opacity: 0; pointer-events: none; }
+  #toFire { right: max(10px, env(safe-area-inset-right)); }
+  #toBoard { left: max(10px, env(safe-area-inset-left)); }
+  .bb .n { position: absolute; top: -4px; right: -4px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px;
+    background: #9e4a17; color: #fff6e6; font: 800 11px/20px Nunito, sans-serif; text-align: center; }
+  .bb .n:empty { display: none; }
+  /* what you brought: a small parchment strip at the foot */
+  #strip { position: fixed; left: 50%; bottom: max(10px, env(safe-area-inset-bottom)); z-index: 3; transform: translateX(-50%);
+    display: flex; gap: 2px; max-width: calc(100vw - 20px); overflow-x: auto; padding: 4px; border-radius: 16px;
+    background: var(--card); box-shadow: inset 0 0 0 1px rgba(150, 115, 60, 0.22), 0 6px 20px rgba(40, 30, 10, 0.25);
+    transition: opacity 0.25s, transform 0.25s; scrollbar-width: none; }
+  #strip::-webkit-scrollbar { display: none; }
+  #strip.hide { opacity: 0; pointer-events: none; transform: translate(-50%, 12px); }
+  #strip button { flex: none; display: grid; place-items: center; width: 48px; height: 48px; padding: 0; border: none; border-radius: 12px;
+    background: none; cursor: pointer; }
+  #strip button:hover { background: rgba(150, 115, 60, 0.10); }
+  #strip button:active { transform: scale(0.92); }
+  #strip canvas { width: 42px; height: 42px; display: block; }
+  #strip .sep { flex: none; width: 1px; margin: 8px 3px; background: var(--line); }
+  #strip svg { width: 22px; height: 22px; }
+  #note { position: fixed; top: max(10px, env(safe-area-inset-top)); left: 50%; z-index: 3; transform: translateX(-50%);
+    padding: 6px 14px; border-radius: 12px; background: var(--card); color: var(--muted); white-space: nowrap;
+    box-shadow: inset 0 0 0 1px rgba(150, 115, 60, 0.22), 0 4px 14px rgba(40, 30, 10, 0.2); transition: opacity 0.6s; font-size: 13px; }
+  #note b { color: var(--ink); font: 650 14px Fraunces, Georgia, serif; margin-right: 6px; }
+  #note.hide { opacity: 0; }
+  @media (max-width: 560px) { #note { font-size: 12px; white-space: normal; width: calc(100vw - 40px); text-align: center; } }
+</style>
+<body>
+<canvas id="lab"></canvas>
+<div id="note"><b>Cooking lab</b><span id="hint"></span></div>
+<button class="bb" id="toFire" aria-label="To the fire"><svg viewBox="0 0 20 20"><path d="M7 4l6 6-6 6" fill="none" stroke="#6a4a1c" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="n" id="waiting"></span></button>
+<button class="bb hide" id="toBoard" aria-label="To the board"><svg viewBox="0 0 20 20"><path d="M13 4l-6 6 6 6" fill="none" stroke="#6a4a1c" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+<div id="strip"></div>
+<script>
+'use strict';
+const TAU = Math.PI * 2;
+const rand = (a, b) => a + Math.random() * (b - a);
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const cv = document.getElementById('lab'), ctx = cv.getContext('2d');
+let W = 0, H = 0, DPR = 1;
+
+// ---------------------------------------------------------------- the things
+// What's on the strip: items.js's paintings, cut on board.js's board.
+const THINGS = ['watercress', 'nettle', 'sorrel', 'garlic', 'cep', 'chanterelle', 'apple', 'strawberry', 'trout', 'perch'];
+Board.paintWith((g, size, U, id) => Items.paint(g, size, U, Items.NAMES.indexOf(id)));
+// The pieces swept off the board's right edge: they wait at the fire on a flat stone, and swept on into the pot they drop in.
+const away = [];
+
+// ---------------------------------------------------------------- the scenes
+// Scene 0, the board; scene 1, the fire. They sit side by side and the view slides between them (view: 0 to 1).
+let scene = 0, view = 0;
+const fire = { x: 0, y: 0, R: 0, water: 0, stone: { x: 0, y: 0, r: 0 } };
+let boardArt = null, fireArt = null, potArt = null, waterArt = null, spoonArt = null, flameArt = null, steamArt = null;
+const bd = Board.make({ sound, off: p => { toFire(p); return true; } });
+const board = bd.rect;
+
+function layout() {
+  DPR = Math.min(2, window.devicePixelRatio || 1);
+  W = innerWidth; H = innerHeight;
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+  const tall = H > W, foot = 76, top = 50;
+  let bw, bh;
+  if (tall) { bw = W - 28; bh = Math.min(H - foot - top - 40, bw * 1.25); }
+  else { bh = Math.min(H - foot - top - 30, 620); bw = Math.min(W - 160, bh * 1.45); }
+  bd.layout((W - bw) / 2, top + (H - foot - top - bh) / 2, bw, bh);
+  fire.R = Math.min(tall ? W * 0.34 : H * 0.27, 230);
+  if (tall) { fire.x = W / 2; fire.y = H * 0.36; fire.stone = { x: W / 2, y: Math.min(H - 110, fire.y + fire.R * 2.15), r: Math.min(W * 0.32, 150) }; }
+  else { fire.x = W * 0.58; fire.y = H * 0.5; fire.stone = { x: Math.max(fire.R * 0.7 + 30, fire.x - fire.R * 2.5), y: H * 0.56, r: Math.min(fire.R * 0.85, 170) }; }
+  fire.water = fire.R * 0.8;
+  paintArts();
+}
+
+// ---------------------------------------------------------------- painting, once
+function layer(w, h) { const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w * DPR)); c.height = Math.max(1, Math.round(h * DPR)); const g = c.getContext('2d'); g.scale(DPR, DPR); return [c, g]; }
+let seed = 7;
+const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+const ground = (g, w, h, base) => Board.paintGround(g, w, h, base, 7 + rnd() * 1e6 | 0);   // (board.js: the same grass as the game's board)
+function roundRect(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+function paintArts() {
+  seed = 7;
+  // the board scene: the grass at camp and the board on it (board.js)
+  let g; [boardArt, g] = layer(W, H);
+  ground(g, W, H, '#56733a');
+  Board.paintBoard(g, board.x, board.y, board.w, board.h);
+
+  // the fire scene: trodden ground, a flat stone where things wait, a ring of stones, the logs under the pot
+  [fireArt, g] = layer(W, H);
+  ground(g, W, H, '#5a6e38');
+  const { R } = fire, fx = fire.x, fy = fire.y;
+  const ash = g.createRadialGradient(fx, fy, R * 0.5, fx, fy, R * 1.8);
+  ash.addColorStop(0, 'rgba(80, 70, 55, 0.75)'); ash.addColorStop(0.6, 'rgba(110, 95, 70, 0.45)'); ash.addColorStop(1, 'rgba(110, 95, 70, 0)');
+  g.fillStyle = ash; g.beginPath(); g.arc(fx, fy, R * 1.8, 0, TAU); g.fill();
+  const st = fire.stone;
+  g.save(); g.filter = 'blur(8px)'; g.fillStyle = 'rgba(20, 25, 10, 0.5)'; g.beginPath(); g.ellipse(st.x + 5, st.y + 10, st.r, st.r * 0.78, 0, 0, TAU); g.fill(); g.restore();
+  const sg = g.createRadialGradient(st.x - st.r * 0.3, st.y - st.r * 0.3, 0, st.x, st.y, st.r * 1.1);
+  sg.addColorStop(0, '#b8b2a0'); sg.addColorStop(1, '#7c776a');
+  g.fillStyle = sg; g.beginPath(); g.ellipse(st.x, st.y, st.r, st.r * 0.78, 0.15, 0, TAU); g.fill();
+  for (let i = 0; i < 18; i++) { g.fillStyle = `rgba(${rnd() < 0.5 ? '60, 58, 50' : '230, 225, 205'}, 0.12)`; g.beginPath(); g.arc(st.x + (rnd() - 0.5) * st.r * 1.4, st.y + (rnd() - 0.5) * st.r, 2 + rnd() * 8, 0, TAU); g.fill(); }
+  for (let i = 0; i < 6; i++) {                                                          // the logs, poking out under the pot
+    const a = i / 6 * TAU + 0.3, l0 = R * 0.6, l1 = R * 1.25;
+    g.strokeStyle = '#3a2614'; g.lineWidth = R * 0.17; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(fx + Math.cos(a) * l0, fy + Math.sin(a) * l0); g.lineTo(fx + Math.cos(a) * l1, fy + Math.sin(a) * l1); g.stroke();
+    g.strokeStyle = '#6b4626'; g.lineWidth = R * 0.12;
+    g.beginPath(); g.moveTo(fx + Math.cos(a) * l0, fy + Math.sin(a) * l0); g.lineTo(fx + Math.cos(a) * l1, fy + Math.sin(a) * l1); g.stroke();
+    g.fillStyle = '#c99a62'; g.beginPath(); g.arc(fx + Math.cos(a) * l1, fy + Math.sin(a) * l1, R * 0.055, 0, TAU); g.fill();
+  }
+  for (let i = 0; i < 14; i++) {                                                         // the ring of stones
+    const a = i / 14 * TAU + rnd() * 0.1, d = R * 1.5, rr = R * (0.13 + rnd() * 0.05), sx = fx + Math.cos(a) * d, sy = fy + Math.sin(a) * d;
+    g.fillStyle = 'rgba(20, 20, 10, 0.4)'; g.beginPath(); g.arc(sx + 3, sy + 5, rr, 0, TAU); g.fill();
+    const s2 = g.createRadialGradient(sx - rr * 0.4, sy - rr * 0.4, 0, sx, sy, rr);
+    s2.addColorStop(0, '#c4bca8'); s2.addColorStop(1, '#6f695c');
+    g.fillStyle = s2; g.beginPath(); g.ellipse(sx, sy, rr, rr * 0.85, a, 0, TAU); g.fill();
+  }
+  // the pot from above: a clay rim and its inside wall (the water goes in between, drawn each frame)
+  let p; [potArt, p] = layer(R * 2.4, R * 2.4);
+  const c = R * 1.2;
+  p.save(); p.filter = 'blur(6px)'; p.fillStyle = 'rgba(20, 10, 0, 0.55)'; p.beginPath(); p.arc(c + 4, c + 8, R, 0, TAU); p.fill(); p.restore();
+  const rim = p.createRadialGradient(c - R * 0.4, c - R * 0.4, R * 0.2, c, c, R * 1.05);
+  rim.addColorStop(0, '#c87a4a'); rim.addColorStop(1, '#7a3e20');
+  p.fillStyle = rim; p.beginPath(); p.arc(c, c, R, 0, TAU); p.fill();
+  p.strokeStyle = 'rgba(30, 10, 0, 0.35)'; p.lineWidth = 3; p.beginPath(); p.arc(c, c, R - 1.5, 0, TAU); p.stroke();
+  p.strokeStyle = 'rgba(255, 210, 160, 0.35)'; p.lineWidth = 2; p.beginPath(); p.arc(c, c, R * 0.92, Math.PI * 0.95, Math.PI * 1.6); p.stroke();
+  p.globalCompositeOperation = 'destination-out'; p.beginPath(); p.arc(c, c, fire.water, 0, TAU); p.fill(); p.globalCompositeOperation = 'source-over';
+  const wall = p.createRadialGradient(c, c, fire.water * 0.98, c, c, R * 0.88);         // the inside wall, in shade on the far side
+  wall.addColorStop(0, 'rgba(60, 25, 10, 0.55)'); wall.addColorStop(1, 'rgba(60, 25, 10, 0)');
+  p.fillStyle = wall; p.beginPath(); p.arc(c, c, R * 0.88, 0, TAU); p.arc(c, c, fire.water, 0, TAU, true); p.fill();
+  // the water itself, deep in the middle and lit at the near side
+  let wg; [waterArt, wg] = layer(fire.water * 2, fire.water * 2);
+  const wr = fire.water, wgr = wg.createRadialGradient(wr * 0.7, wr * 0.6, 0, wr, wr, wr);
+  wgr.addColorStop(0, '#9fae84'); wgr.addColorStop(0.7, '#6f8460'); wgr.addColorStop(1, '#465a3c');
+  wg.fillStyle = wgr; wg.beginPath(); wg.arc(wr, wr, wr, 0, TAU); wg.fill();
+  // a puff of steam: soft white, fading out
+  let sg2; [steamArt, sg2] = layer(64, 64);
+  const sm = sg2.createRadialGradient(32, 32, 0, 32, 32, 32);
+  sm.addColorStop(0, 'rgba(255, 255, 255, 0.9)'); sm.addColorStop(0.5, 'rgba(255, 255, 255, 0.4)'); sm.addColorStop(1, 'rgba(255, 255, 255, 0)');
+  sg2.fillStyle = sm; sg2.fillRect(0, 0, 64, 64);
+  // a flame tongue, from above: a soft warm blob
+  let fg; [flameArt, fg] = layer(64, 64);
+  const fl = fg.createRadialGradient(32, 32, 0, 32, 32, 32);
+  fl.addColorStop(0, 'rgba(255, 240, 170, 1)'); fl.addColorStop(0.35, 'rgba(255, 170, 60, 0.85)'); fl.addColorStop(0.7, 'rgba(220, 80, 20, 0.35)'); fl.addColorStop(1, 'rgba(200, 50, 10, 0)');
+  fg.fillStyle = fl; fg.fillRect(0, 0, 64, 64);
+  // the wooden spoon, from above: the bowl at the right
+  let pg; [spoonArt, pg] = layer(170, 44);
+  pg.save(); pg.translate(0, 22);
+  pg.fillStyle = 'rgba(0,0,0,0.22)'; pg.beginPath(); pg.ellipse(90, 8, 80, 9, 0, 0, TAU); pg.fill();
+  pg.fillStyle = '#b98a52'; roundRect(pg, 4, -5, 120, 10, 5); pg.fill();
+  pg.fillStyle = '#d6aa70'; roundRect(pg, 4, -5, 120, 5, 3); pg.fill();
+  const sb = pg.createRadialGradient(140, -4, 2, 142, 0, 24); sb.addColorStop(0, '#e2bb84'); sb.addColorStop(1, '#a87a45');
+  pg.fillStyle = sb; pg.beginPath(); pg.ellipse(142, 0, 24, 15, 0, 0, TAU); pg.fill();
+  pg.fillStyle = 'rgba(90, 55, 20, 0.35)'; pg.beginPath(); pg.ellipse(144, 1, 16, 9, 0, 0, TAU); pg.fill();
+  pg.restore();
+}
+
+// ---------------------------------------------------------------- the hand
+// On the board it's the board's (board.js: a swipe cuts, a slow drag sweeps). At the fire a drag sweeps what waits there,
+// and in the pot it stirs.
+const hand = { on: false, mode: '', x: -99, y: -99, seen: false, mouse: false, ang: 0 };
+let now = performance.now() / 1000, dtLast = 1 / 60;
+const rings = [], drops = [];
+
+cv.addEventListener('pointerdown', e => {
+  Sound.start();
+  cv.setPointerCapture(e.pointerId);
+  const x = e.clientX, y = e.clientY, t = performance.now() / 1000;
+  Object.assign(hand, { on: true, x, y, seen: true });
+  hideNote();
+  if (scene === 0) { hand.mode = 'board'; bd.down(x, y, t); return; }
+  if (Math.hypot(x - fire.x, y - fire.y) < fire.water) { hand.mode = 'stir'; hand.ang = Math.atan2(y - fire.y, x - fire.x); }
+  else hand.mode = 'push';
+});
+cv.addEventListener('pointermove', e => {
+  const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e], t = performance.now() / 1000;
+  for (const ev of evs.length ? evs : [e]) moveTo(ev.clientX, ev.clientY, t);
+  hand.seen = true; hand.mouse = bd.hand.mouse = e.pointerType === 'mouse';
+});
+const end = () => { if (hand.mode === 'board') bd.up(); hand.on = false; hand.mode = ''; };
+cv.addEventListener('pointerup', end);
+cv.addEventListener('pointercancel', end);
+cv.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') { hand.seen = false; bd.leave(); } });
+
+function moveTo(x, y, t) {
+  const ox = hand.x, oy = hand.y;
+  hand.x = x; hand.y = y;
+  if (scene === 0 || hand.mode === 'board') { bd.move(x, y, t); return; }
+  if (hand.mode === 'push') Board.sweep(away.filter(p => p.place === 'fire'), ox, oy, x, y, dtLast, now);
+  else if (hand.mode === 'stir') stirTo(x, y);
+}
+// Round the pot: the water turns with the spoon, a stir sound each turn.
+let swirl = 0, stirred = 0;
+function stirTo(x, y) {
+  const a = Math.atan2(y - fire.y, x - fire.x);
+  let d = a - hand.ang; if (d > Math.PI) d -= TAU; if (d < -Math.PI) d += TAU;
+  hand.ang = a;
+  const r = Math.hypot(x - fire.x, y - fire.y) / fire.water;
+  swirl = clamp(swirl + d * 2.2 * clamp(r, 0.3, 1), -6, 6);
+  stirred += Math.abs(d);
+  if (stirred > Math.PI * 1.2) { stirred = 0; sound('stir'); }
+  if (Math.abs(d) > 0.08 && Math.random() < 0.3) rings.push({ x, y, r: 4, t: 0, life: 0.6 });
+}
+
+// ---------------------------------------------------------------- the world moving
+function tick(dt) {
+  dtLast = dt;
+  view += clamp(scene - view, -dt * 3.4, dt * 3.4);
+  bd.tick(dt, now);
+  for (const p of away) {
+    if (p.place === 'pot') { inPot(p, dt); continue; }
+    // swept along the fire's ground: into the pot if it reaches the water
+    const fric = hand.on && hand.mode === 'push' ? 9 : 4.2;
+    p.x += p.vx * dt; p.y += p.vy * dt; p.a += p.va * dt;
+    const f = Math.exp(-dt * fric); p.vx *= f; p.vy *= f; p.va *= Math.exp(-dt * 6);
+    p.pt = Math.max(0, p.pt - dt * 3);
+    p.x = clamp(p.x, 10, W - 10); p.y = clamp(p.y, 10, H - 10);
+    if (p.drop > 0) p.drop = Math.max(0, p.drop - dt * 2.5);
+    if (Math.hypot(p.x - fire.x, p.y - fire.y) < fire.water * 0.92) intoPot(p);
+  }
+  for (let i = drops.length - 1; i >= 0; i--) {
+    const b = drops[i]; b.t += dt; b.x += b.vx * dt; b.y += b.vy * dt; b.vx *= Math.exp(-dt * 5); b.vy *= Math.exp(-dt * 5);
+    if (b.t > b.life) drops.splice(i, 1);
+  }
+  for (let i = rings.length - 1; i >= 0; i--) { const r = rings[i]; r.t += dt; r.r += dt * 40; if (r.t > r.life) rings.splice(i, 1); }
+  swirl *= Math.exp(-dt * 0.35);
+  // bubbles come up on the simmer
+  if (Math.random() < dt * 9) bubbles.push({ a: rand(0, TAU), r: Math.sqrt(Math.random()) * 0.88, t: 0, life: rand(0.5, 1.2), s: rand(2, 5) });
+  for (let i = bubbles.length - 1; i >= 0; i--) { const b = bubbles[i]; b.t += dt; b.a += swirl * dt * (1.1 - b.r * 0.4); if (b.t > b.life) bubbles.splice(i, 1); }
+}
+const bubbles = [];
+function toFire(p) {
+  p.place = 'fire';
+  const st = fire.stone, a = rand(0, TAU), d = Math.sqrt(Math.random()) * st.r * 0.55;
+  p.x = st.x + Math.cos(a) * d; p.y = st.y + Math.sin(a) * d * 0.75;
+  p.vx = p.vy = 0; p.va = rand(-0.5, 0.5); p.drop = 1; p.enter = null;
+  away.push(p);
+  counts();
+}
+function intoPot(p) {
+  p.place = 'pot';
+  p.pr = Math.hypot(p.x - fire.x, p.y - fire.y) / fire.water; p.pa = Math.atan2(p.y - fire.y, p.x - fire.x);
+  p.drop = 1; p.bob = rand(0, TAU); p.to = rand(0.15, 0.68);
+  sound('plop', { what: p.id, w: clamp(p.area / 6000, 0.4, 1.6) });
+  rings.push({ x: p.x, y: p.y, r: 6, t: 0, life: 0.8 });
+  for (let i = 0; i < 6; i++) drops.push({ x: p.x, y: p.y, vx: rand(-120, 120), vy: rand(-120, 120), r: rand(1.5, 3), t: 0, life: rand(0.25, 0.45) });
+  counts();
+}
+function inPot(p, dt) {
+  // round with the water, drifting out and in a little, and turning
+  p.pa += swirl * dt * (1.15 - p.pr * 0.5);
+  p.pr += (p.to - p.pr) * Math.min(1, dt * 1.5) + Math.sin(now * 0.7 + p.uid) * dt * 0.03;
+  p.to = clamp(p.to + Math.sin(now * 0.31 + p.uid * 2.1) * dt * 0.02, 0.1, 0.72);
+  p.a += swirl * dt * 0.6 + Math.sin(now * 0.5 + p.uid) * dt * 0.05;
+  p.x = fire.x + Math.cos(p.pa) * p.pr * fire.water; p.y = fire.y + Math.sin(p.pa) * p.pr * fire.water;
+  p.drop = Math.max(0, p.drop - dt * 2);
+}
+
+// ---------------------------------------------------------------- drawing
+function render() {
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const off = -view * W, shake = bd.bump * bd.bump * 3;
+  // the board
+  if (view < 1) {
+    ctx.save(); ctx.translate(rand(-shake, shake) * 0.5, rand(-shake, shake) * 0.5);
+    ctx.drawImage(boardArt, off, 0, W, H);
+    bd.draw(ctx, off);
+    ctx.restore();
+  }
+  // the fire
+  if (view > 0) {
+    ctx.save(); ctx.translate(off + W, 0);
+    ctx.drawImage(fireArt, 0, 0, W, H);
+    const R = fire.R, fx = fire.x, fy = fire.y;
+    ctx.globalCompositeOperation = 'lighter';                    // the flames round the pot
+    for (let i = 0; i < 16; i++) {
+      const a = i / 16 * TAU + Math.sin(now * 1.3 + i) * 0.08, fl = 0.75 + 0.25 * Math.sin(now * (5 + i % 4) + i * 1.7);
+      const d = R * (1.02 + 0.08 * Math.sin(now * 3 + i)), s = R * 0.55 * fl;
+      ctx.globalAlpha = 0.55 * fl;
+      ctx.drawImage(flameArt, fx + Math.cos(a) * d - s / 2, fy + Math.sin(a) * d - s / 2, s, s);
+    }
+    ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+    // the water, what's in it, the swirl and the bubbles, then the rim over it all
+    const w = fire.water;
+    ctx.drawImage(waterArt, fx - w, fy - w, w * 2, w * 2);
+    ctx.save(); ctx.beginPath(); ctx.arc(fx, fy, w, 0, TAU); ctx.clip();
+    for (const p of away) if (p.place === 'pot') Board.drawPiece(ctx, p, 0, 0, 0.98 + 0.03 * Math.sin(now * 2 + p.bob) - p.drop * 0.08);
+    ctx.fillStyle = 'rgba(110, 135, 100, 0.22)'; ctx.fillRect(fx - w, fy - w, w * 2, w * 2);   // under the surface a little
+    ctx.strokeStyle = 'rgba(235, 245, 225, 0.22)'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+    const turn = swirlAngle;
+    for (let i = 0; i < 5; i++) { const r = w * (0.25 + i * 0.14); ctx.beginPath(); ctx.arc(fx, fy, r, turn * (1.1 - i * 0.1) + i * 1.3, turn * (1.1 - i * 0.1) + i * 1.3 + 0.9); ctx.stroke(); }
+    for (const b of bubbles) {
+      const x = fx + Math.cos(b.a) * b.r * w, y = fy + Math.sin(b.a) * b.r * w, k = b.t / b.life, s = b.s * (0.4 + k);
+      ctx.strokeStyle = `rgba(240, 250, 235, ${0.6 * (1 - k)})`; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(x, y, s, 0, TAU); ctx.stroke();
+    }
+    for (const r of rings) { const k = r.t / r.life; ctx.strokeStyle = `rgba(240, 250, 235, ${0.5 * (1 - k)})`; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(r.x, r.y, r.r, 0, TAU); ctx.stroke(); }
+    const gl = ctx.createLinearGradient(fx - w, fy - w, fx + w, fy + w);   // (one gradient a frame, the lab's only)
+    gl.addColorStop(0, 'rgba(255, 255, 240, 0.16)'); gl.addColorStop(0.45, 'rgba(255, 255, 240, 0)');
+    ctx.fillStyle = gl; ctx.fillRect(fx - w, fy - w, w * 2, w * 2);
+    ctx.restore();
+    ctx.drawImage(potArt, fx - R * 1.2, fy - R * 1.2, R * 2.4, R * 2.4);
+    // steam, drifting up off it
+    for (let i = 0; i < 5; i++) {
+      const k = ((now * 0.25 + i / 5) % 1), x = fx + Math.sin(now * 0.6 + i * 2) * w * 0.5, y = fy - k * R * 1.4;
+      const s = w * (0.5 + k * 0.8);
+      ctx.globalAlpha = 0.2 * Math.sin(k * Math.PI); ctx.drawImage(steamArt, x - s / 2, y - s / 2, s, s);
+    }
+    ctx.globalAlpha = 1;
+    for (const p of away) if (p.place === 'fire') Board.drawPiece(ctx, p, 0, p.drop * 30);
+    for (const b of drops) { const k = b.t / b.life; ctx.fillStyle = `rgba(210, 230, 220, ${1 - k * k})`; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, TAU); ctx.fill(); }
+    ctx.restore();
+  }
+  if (hand.seen && Math.abs(view - scene) < 0.05) drawHand();
+}
+let swirlAngle = 0;
+function drawHand() {
+  if (scene === 0) { bd.drawHand(ctx); return; }
+  const { x, y } = hand;
+  if (hand.mode === 'stir' || (!hand.on && Math.hypot(x - fire.x, y - fire.y) < fire.water)) {
+    // the spoon, its bowl at the finger, the handle out over the rim
+    ctx.save(); ctx.translate(x, y); ctx.rotate(Math.atan2(y - fire.y, x - fire.x) + Math.PI); ctx.drawImage(spoonArt, -158, -22, 170, 44); ctx.restore();
+  }
+}
+
+// ---------------------------------------------------------------- the strip, the arrows, the note
+const strip = document.getElementById('strip');
+for (const id of THINGS) {
+  const b = document.createElement('button'), c = document.createElement('canvas');
+  c.width = c.height = 96; Items.paint(c.getContext('2d'), 96, 84, Items.NAMES.indexOf(id));
+  b.appendChild(c); b.title = id; b.setAttribute('aria-label', 'Put ' + id + ' on the board');
+  b.onclick = () => { Sound.start(); lay(id); };
+  strip.appendChild(b);
+}
+strip.insertAdjacentHTML('beforeend', '<span class="sep"></span><button id="clear" title="Clear the board and the pot" aria-label="Clear"><svg viewBox="0 0 20 20"><path d="M4 10a6 6 0 1 0 2-4.5M4 3.5V7h3.5" fill="none" stroke="#6a4a1c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>');
+document.getElementById('clear').onclick = () => { bd.clear(); away.length = 0; counts(); };
+function lay(id) {
+  bd.lay(id);
+  sound('pluck', { what: id });
+  if (scene !== 0) go(0);
+}
+const toFireB = document.getElementById('toFire'), toBoardB = document.getElementById('toBoard');
+function go(s) {
+  scene = s;
+  toFireB.classList.toggle('hide', s === 1); toBoardB.classList.toggle('hide', s === 0);
+  strip.classList.toggle('hide', s === 1);
+  end();
+  hint();
+}
+toFireB.onclick = () => go(1);
+toBoardB.onclick = () => go(0);
+addEventListener('keydown', e => { if (e.key === 'ArrowRight') go(1); if (e.key === 'ArrowLeft') go(0); });
+function counts() { const n = away.filter(p => p.place === 'fire').length; document.getElementById('waiting').textContent = n ? n : ''; }
+const note = document.getElementById('note');
+let noteTimer = 0;
+function hint() {
+  document.getElementById('hint').textContent = scene === 0
+    ? 'Swipe through a thing to cut it · drag a piece slowly to sweep it · off the right edge to the fire · from the left edge to scrape it all'
+    : 'Sweep what waits on the stone into the pot · drag round in the pot to stir';
+  note.classList.remove('hide'); clearTimeout(noteTimer); noteTimer = setTimeout(hideNote, 6000);
+}
+function hideNote() { if (bd.pieces.length || away.length) note.classList.add('hide'); }
+function sound(name, o) { try { Sound.play(name, o || {}); } catch (e) { } }
+
+// ---------------------------------------------------------------- go
+addEventListener('resize', () => {
+  const of = { ...fire };
+  layout();
+  for (const p of away) { p.x = fire.x + (p.x - of.x) * fire.R / of.R; p.y = fire.y + (p.y - of.y) * fire.R / of.R; }   // (where they were, by the fire)
+});
+layout();
+for (const [id, fx, fy] of [['apple', 0.32, 0.4], ['watercress', 0.66, 0.58]]) {
+  const p = bd.lay(id); p.x = board.x + board.w * fx; p.y = board.y + board.h * fy; p.a = rand(-0.3, 0.3); p.pt = 0;
+}
+hint();
+let last = performance.now();
+function frame(t) {
+  const dt = Math.min(0.05, (t - last) / 1000); last = t; now = t / 1000;
+  tick(dt);
+  swirlAngle += swirl * dt;
+  Sound.update && Sound.update({ fire: scene === 1 ? 0.8 : 0.35, pot: scene === 1 ? 0.45 : 0.15 });
+  render();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+window.lab = { bd, away, go, lay, board, fire };
+</script>

@@ -1,0 +1,130 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>board lab</title>
+<!-- What the board at the fire could be at a camp in the wild (2026-10-22, Axel: "more like a wilderness survival situation,
+     right now it's a kitchen cutting board"): the board as it is (board.js paintBoard), a split half-log on two stones and a flat
+     stone at the fire, side by side. Each close-up is a board.js board: swipe to cut, as at the fire. Under each, the same small
+     on the grass at camp by the seat log, as the meadow would show it (squashed as boardSmall is). The new paintings take
+     paintBoard's arguments, so either drops into board.js as it is. -->
+<script src="fur.js"></script>
+<script src="items.js"></script>
+<script src="sound.js"></script>
+<script src="board.js"></script>
+<style>
+  @font-face { font-family: 'Fraunces'; font-style: normal; font-weight: 600 680; font-display: swap;
+    src: url(assets/fonts/fraunces-normal-latin.woff2) format('woff2'); }
+  @font-face { font-family: 'Nunito'; font-style: normal; font-weight: 500 900; font-display: swap;
+    src: url(assets/fonts/nunito-normal-latin.woff2) format('woff2'); }
+  :root { --card: #f8f0de; --ink: #3b372f; --muted: #6f6657; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #3f5a2c; color: var(--ink); font: 14px/1.3 Nunito, ui-rounded, system-ui, sans-serif; }
+  main { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; padding: 14px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  section { background: var(--card); border-radius: 14px; padding: 10px; box-shadow: 0 6px 20px rgba(40, 30, 10, 0.25); }
+  h2 { margin: 2px 4px 2px; font: 650 17px Fraunces, Georgia, serif; }
+  p { margin: 0 4px 8px; color: var(--muted); font-size: 13px; }
+  canvas { display: block; width: 100%; border-radius: 10px; touch-action: none; }
+  canvas.small { margin-top: 8px; }
+</style>
+<body>
+<main>
+  <section><h2>Now: a kitchen board</h2><p>Sawn plank, rounded corners, even grain.</p><canvas class="big"></canvas><canvas class="small"></canvas></section>
+  <section><h2>A split half-log</h2><p>Split with the knife and a stick, flat face up, bark along its sides, end grain at its chopped ends, on two stones; the knife in the grass by it.</p><canvas class="big"></canvas><canvas class="small"></canvas></section>
+  <section><h2>A flat stone</h2><p>A slab from the river by the fire ring, lichen at its rim, sooty on the fire's side.</p><canvas class="big"></canvas><canvas class="small"></canvas></section>
+</main>
+<script>
+'use strict';
+const TAU = Math.PI * 2;
+const lerp = (a, b, u) => a + (b - a) * u;
+Board.paintWith((g, size, U, id) => Items.paint(g, size, U, Items.NAMES.indexOf(id)));
+const seeded = s => () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+
+const paintLog = Board.paintLog, paintStone = Board.paintStone;   // (board.js: the game's own)
+
+// ---------------------------------------------------------------- the panels
+const KINDS = [
+  { paint: (g, x, y, w, h) => Board.paintBoard(g, x, y, w, h, 7), aspect: 1.45, pad: [0.1, 0.1] },
+  { paint: paintLog, aspect: 2, pad: [0.09, 0.2] },
+  { paint: paintStone, aspect: 1.35, pad: [0.12, 0.14] },
+];
+const panels = [...document.querySelectorAll('section')].map((sec, i) => {
+  const big = sec.querySelector('.big'), small = sec.querySelector('.small'), K = KINDS[i];
+  const P = { K, big, small, g: big.getContext('2d'), art: null, W: 0, H: 0 };
+  P.board = Board.make({ sound: (n, o) => sound(n, o), off: () => false });
+  big.addEventListener('pointerdown', e => { big.setPointerCapture(e.pointerId); P.board.hand.mouse = e.pointerType === 'mouse'; const [x, y] = at(e); P.board.down(x, y, performance.now() / 1000); });
+  big.addEventListener('pointermove', e => { const [x, y] = at(e); P.board.move(x, y, performance.now() / 1000); });
+  big.addEventListener('pointerup', () => P.board.up());
+  big.addEventListener('pointerleave', () => P.board.leave());
+  const at = e => { const r = big.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  return P;
+});
+function sound(n, o) { try { Sound.play && Sound.play(n, o); } catch (e) { } }
+
+let DPR = 1;
+function layout() {
+  DPR = Math.min(2, devicePixelRatio || 1);
+  for (const P of panels) {
+    const W = P.big.clientWidth, H = Math.round(W * 0.72);
+    P.W = W; P.H = H;
+    P.big.width = W * DPR; P.big.height = H * DPR; P.big.style.height = H + 'px';
+    const [px, py] = P.K.pad;
+    let bw = W * (1 - px * 2), bh = bw / P.K.aspect;
+    if (bh > H * (1 - py * 2)) { bh = H * (1 - py * 2); bw = bh * P.K.aspect; }
+    const bx = (W - bw) / 2, by = (H - bh) / 2;
+    P.board.layout(bx, by, bw, bh);
+    const c = document.createElement('canvas'); c.width = W * DPR; c.height = H * DPR;
+    const g = c.getContext('2d'); g.scale(DPR, DPR);
+    Board.paintGround(g, W, H, '#56733a', 11);
+    P.K.paint(g, bx, by, bw, bh, 7);
+    P.art = c;
+    const o = document.createElement('canvas'); o.width = W * DPR; o.height = H * DPR;   // (the board alone, for the camp)
+    const go = o.getContext('2d'); go.scale(DPR, DPR); P.K.paint(go, bx, by, bw, bh, 7); P.only = o;
+    if (!P.laid) { P.laid = true; for (const id of ['watercress', 'apple', 'cep']) P.board.lay(id); }
+    paintCamp(P);
+  }
+}
+
+// The same at camp, small: a ring of stones and its fire, the seat log beside it, the board laid at the log's fire end, squashed
+// as the meadow lies (BOARD_FLAT). A sketch for where it sits and how it reads small; the meadow's own fire and log aren't these.
+const FLAT = 0.6;
+function paintCamp(P) {
+  const c = P.small, W = P.W, H = Math.round(W * 0.42);
+  c.width = W * DPR; c.height = H * DPR; c.style.height = H + 'px';
+  const g = c.getContext('2d'); g.scale(DPR, DPR);
+  Board.paintGround(g, W, H, '#5a7a3c', 3);
+  const fx = W * 0.62, fy = H * 0.5, fr = H * 0.2, rnd = seeded(5);
+  g.fillStyle = 'rgba(80, 70, 55, 0.6)'; g.beginPath(); g.ellipse(fx, fy, fr * 1.5, fr * 1.5 * FLAT * 1.4, 0, 0, TAU); g.fill();
+  for (let i = 0; i < 11; i++) { const a = i / 11 * TAU; g.fillStyle = i % 2 ? '#8e897b' : '#a39e8f'; g.beginPath(); g.ellipse(fx + Math.cos(a) * fr * 1.25, fy + Math.sin(a) * fr * 0.8, fr * 0.28, fr * 0.2, 0, 0, TAU); g.fill(); }
+  g.fillStyle = '#f2a640'; g.beginPath(); g.moveTo(fx - fr * 0.4, fy + 2); g.quadraticCurveTo(fx, fy - fr * 1.8, fx + fr * 0.4, fy + 2); g.fill();
+  g.fillStyle = '#ffd77a'; g.beginPath(); g.moveTo(fx - fr * 0.2, fy + 2); g.quadraticCurveTo(fx, fy - fr * 0.9, fx + fr * 0.2, fy + 2); g.fill();
+  // the seat log, lying across the near left, a little turned
+  const lx = W * 0.3, ly = H * 0.74, ll = W * 0.22, lr = H * 0.075;
+  g.save(); g.translate(lx, ly); g.rotate(-0.12);
+  g.fillStyle = 'rgba(20, 25, 10, 0.3)'; g.beginPath(); g.ellipse(4, lr * 0.9, ll / 2, lr * 0.7, 0, 0, TAU); g.fill();
+  g.fillStyle = '#5c4029'; g.beginPath(); g.roundRect(-ll / 2, -lr, ll, lr * 2, lr); g.fill();
+  g.fillStyle = '#7a573a'; g.fillRect(-ll / 2 + lr, -lr, ll - lr * 2, lr * 0.7);
+  g.fillStyle = '#d9b984'; g.beginPath(); g.ellipse(ll / 2 - lr * 0.4, 0, lr * 0.45, lr, 0, 0, TAU); g.fill();
+  g.restore();
+  // the board: between the log's fire end and the ring, its open edge toward the fire
+  const R = P.board.rect, bw = W * 0.2, k = bw / R.w, bh = R.h * k * FLAT;
+  const bx = W * 0.4, by = H * 0.5;
+  g.save(); g.translate(bx, by); g.scale(k, k * FLAT); g.translate(-(R.x + R.w / 2), -(R.y + R.h / 2));
+  g.drawImage(P.only, 0, 0, P.W, P.H);
+  g.restore();
+}
+
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  for (const P of panels) {
+    P.board.tick(dt, now / 1000);
+    const g = P.g; g.setTransform(DPR, 0, 0, DPR, 0, 0);
+    g.drawImage(P.art, 0, 0, P.W, P.H);
+    P.board.draw(g); P.board.drawOver(g); P.board.drawHand(g);
+  }
+  requestAnimationFrame(frame);
+}
+addEventListener('resize', layout);
+document.fonts.ready.then(() => { layout(); requestAnimationFrame(frame); });
+</script>

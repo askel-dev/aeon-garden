@@ -27,6 +27,8 @@ The files (each in more detail, with its features, in `.claude/docs/files.md`):
   `dishes.js`, `items.js`: the dishes and the picked things, painted in code.
 - `friends.js`, `net.js`, `supabase/`: friends and playing together. `stone.js`: the old stone (an LLM food critic
   through a Supabase Edge Function; keys are Supabase secrets, never in the page).
+- `updates.js`: the version (`0.MINOR.PATCH`) and what each update brought, shown once after an update (What's new, game.js).
+  One block a push to `main`, not a change: while the top block isn't committed yet, add notes to it (the rule is atop the file).
 - `sw.js`: the offline shell (bump `VERSION` for a clean start). `assets/fonts`: self-hosted Fraunces and Nunito.
 
 Notes on each part of the game are in `.claude/docs/`. They don't load on their own: read the one for what you're

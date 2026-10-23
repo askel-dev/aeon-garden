@@ -1019,11 +1019,636 @@ transforms; nothing new when not fishing. No timing needed unless the rises show
 
 ### Settled / open
 - **Settled (Axel, 2026-10-21):** a Stardew-style bar to bring a fish in, after a tap on the bite; the rod is made
-  (2 sticks + rope) at the make strip; no bait for now; four fish in the first slice, the eel at night included.
+  (2 sticks + rope) at the make strip; no bait for now (bait is stage 11); four fish in the first slice, the eel at night included.
 - **Open:** whether a fish can be eaten raw (I'd say no: it wants the fire, which is the point); how hard the bar should
   be at level 0 (to find by playing step 1); whether the camera eases in while reeling or stays put.
 
+## Stage 11: bait, and cleaning a fish (planned 2026-10-22)
+
+Stage 10 left bait out. This stage brings it in, along with what a fish leaves behind once it's cleaned. It
+ties the rod to the rest of the game in both directions: the meadow feeds the hook (worms after rain, grubs under a
+fallen log), and the fire feeds it back (a fish cleaned for cooking leaves its guts for bait and its bones for a stock).
+It passes the test for new work twice: a new thing to cook (fish stock and the dishes that take it) and a new reason to
+cook (a fish dish gives you bait for the next fish). Build it only after Axel has played the bar by hand (stage 10, step 3):
+bait changes how often fish bite, so the bar should feel right first.
+
+### The rule
+**Bait is never needed.** A bare thorn fishes exactly as it does now. Bait makes a fish bite **sooner** and
+changes **which** fish comes, so it's a choice and never a toll. Cleaning is never a chore of its own: it happens
+as part of cooking or drying a fish (below), so nothing new sits between the catch and the pot.
+
+### Bait from the meadow
+Two new wild finds (sim.js `FINDS`, so they come up, last and get picked exactly as the others do; nothing else
+eats them), and one bait from the fire:
+- **Worms** (`worm`): come up onto the open grass and the paths **after rain**, as the mushrooms do (`w.rainAt`), but
+  only for a short while: they come up within the first half day after rain and each lasts a few hours (`days` well under 1). A
+  rainy morning is the time to dig for bait. They come in all seasons but winter (the ground is frozen) and are
+  low (snow covers them). A pick gives 3.
+- **Grubs** (`grub`): fat white beetle grubs under the bark of a **fallen log or a stump** (a new `findPlace` 'log',
+  next to the sim's `fallen` and `stump` trees, as the oyster mushroom finds its log). They're there all year
+  but few at a time; a pick gives 2. This is the winter bait.
+- **Fish guts** (`guts`): from cleaning a fish (below).
+
+All three are ingredients in recipes.js: tagged `bait`, `raw: false`, `fill: 0`, stack 20, with their own `where` and
+`text`. They get a **Bait** section of their own in the book's Finds (`FIND_SECTIONS`). Worms and grubs glint only
+once the forager has a rod (`eachPickable`): before that they would only be clutter. They're painted in game.js as the
+finds are: a worm is a pink loop half in the earth, a grub is a curl of cream under a lifted strip of bark. Each has a
+small satchel painting in items.js. Guts are painted as a soft pinkish-grey twist, cute and not gory.
+
+### Bait on the hook
+A `BAIT` table in recipes.js, copy-a-block like `FISH`:
+- `bite`: how much sooner a bite comes (it divides `biteWait`'s time).
+- `likes`: per fish, how many times more often that one bites (it multiplies `fishKind`'s odds).
+- `big`: optional; it shifts the size toward the big end (it eases `FISH_SKEW`).
+
+A first guess, Axel's to tune:
+- **Worm**: `bite: 1.5`, likes perch ×2 and eel ×2. Everything takes a worm.
+- **Grub**: `bite: 1.4`, likes roach ×2 and trout ×2.
+- **Guts**: `bite: 1.3`, likes eel ×3 and perch ×1.5, `big: 1.4`. The big-fish bait.
+
+Bait never makes a fish bite out of its own water, season or hour. That stays `FISH`'s job, so the book's
+"where" stays true.
+
+**Choosing it:** the line over the satchel that says "Fish here" gets a small bait chip on it: the bait's
+painting and how many you have. A tap cycles through the baits in the satchel and "none". On a touch screen the
+chip is 44 px. On a computer, a key; it has to be one that's free, and finding it is part of step 2. The choice is
+remembered (`f.bait`, in the forager's blank, `''`). When it runs out, the chip goes back to none and says so once. Nothing new
+appears on screen while the line is out, except the chip.
+
+**Using it up:** one bait goes **when a fish takes it**: a bite you strike, or a bite you miss (the fish stole it).
+Nibbles cost nothing, and neither does pulling the line in before a bite. So a careful angler gets a fish per bait,
+and a hasty one gets fewer. On the first cast with a bait, "Worm on the hook" floats up once.
+
+### Cleaning a fish
+A fresh fish (tagged `fish` and not `dried`) is cleaned **at the moment it's used**:
+- **Cooking.** At Cook, before the stirring starts, the forager guts each fresh fish in the vessel with a quick flick.
+  This is one beat of the cooking's own animation, not a step you do. Each fish gives **1 fish guts and 1 fish bones**,
+  which fly to their tiles as a dish does (into the basket at camp if the satchel's full, on the ground by the fire with no room
+  anywhere). A friend's cook goes into that cook's satchel.
+- **The drying rack.** A perch or trout hung on the rack is split and cleaned as it's hung, so it gives the same two
+  (sim.js `rackTick` or wherever the hang is handled).
+- Dried fish is already cleaned and gives nothing. An eel gives guts and bones like the rest (realism optional).
+
+A `cleans` field on a fish ingredient says what it gives (`{ guts: 1, bones: 1 }`, all four the same for now). That way a
+later fish, a crayfish say, could give shells instead. **Fish bones** (`bones`): tagged `bones`, `raw: false`, `fill: 0`,
+stack 20, painted as a cartoon fishbone (head, spine and ribs, tail), the cutest thing in the satchel.
+
+### Fish stock, and what takes it
+**Fish stock** is a dish, cooked in the pot, and other dishes take it by name. recipes.js already lets a dish go into a
+dish: "Wilted greens" goes into others the same way. A first set, each painted in dishes.js to the dish bar
+(dish-painting.md, with a sheet to Axel first):
+- **Fish stock** (pot: bones, bones, any greens): pale gold, `eats: 'sip'`, warms, fills a little. It teaches itself
+  the first time bones go in the pot (a hint, `hinted`), since bones in a pot are a natural thing to try.
+- **Cress and stock broth** (pot: Fish stock, watercress, watercress): a winter broth. It warms, and it's a reason to keep
+  bones into the cold.
+- **Dried mushroom broth** (pot: Fish stock, dried mushrooms, dried mushrooms): winter food from the rack, deep and
+  brown. It warms.
+- **Eel in green sauce** (pot: eel, Fish stock, sorrel, nettles): a summer night's dish, with the stock as the sauce's base.
+- **Fish stew with ceps** (pot: Fish stock, any fish, cep, any greens): autumn. It fills the most of the fish dishes.
+
+The pot's broth (`BROTHS`) gets a `bones` colour, a thin pale gold. A stock going into a pot turns it that gold before
+anything else goes in.
+
+### How it looks and sounds
+- The bait chip is drawn in the page, small, beside "Fish here", and rewritten only when the bait or its count changes.
+- The cleaning beat at Cook is a short knife flick over the vessel. A small grey-pink twist and a fishbone pop out and fly to their
+  tiles. sound.js gets a soft wet `clean` and a dry tick for the bones landing.
+- Picking worms gets a soft earthy pull; picking grubs gets a bark creak.
+- Nothing new in the meadow's frame beyond two more kinds of find (drawn as the others: painted once, `drawFind`).
+
+### Building it
+Each step is played before the next:
+1. **Worms and grubs.** The two `FINDS` kinds (the rain timing for worms; a new `findPlace` 'log' for grubs by fallen
+   logs and stumps), their paintings, ingredients and Finds pages, the Bait section, and the glint only with a rod.
+   `garden.give('worm', 20)` in dev.
+2. **Bait on the hook.** `BAIT`, `f.bait`, the chip, using bait up, and `biteWait` / `fishKind` / size taking it into account. Checked
+   by counting: a headless loop over `fishKind` and the bite times with and without each bait, so the multipliers do
+   what the table says.
+3. **Cleaning.** `cleans`, guts and bones from Cook and the rack, their paintings, the cleaning beat and its sound.
+4. **Stock and its dishes.** The five recipes, their paintings, the `bones` broth, the stock's hint.
+5. **Friends.** The finds are the meadow's, so picks already go over as any find's do. Bait is the angler's own (not sent;
+   a friend's line looks the same either way). Cleaning yields go to the cook. Checked with two tabs.
+
+### The sim and the keep
+- `worm` and `grub` are new keys in `FINDS`. A kept meadow just has none of them till they come up: no
+  `KEEP_VERSION` bump. They're looked at in `findsTick` with the others, on `w.findRng`.
+- `f.bait: ''` in the forager's blank (`foragerOf`), so a kept forager from before gets none.
+- Headless, a few years over several seeds: the finds count stays sane (worms after each rain, gone by the next
+  day; a few grubs about the logs), nothing else changes, and `packWorld` / `unpackWorld` round-trips.
+
+### Checked by
+- Each bait on each fish's water (`garden.fishNow` skips the wait, but the bait still counts against the odds).
+- The chip at 1400x900, 390x844 and 844x390, by touch and by key.
+- A bait used up on a strike and on a miss, and not on a nibble or on pulling in.
+- A roach cooked on a stick giving guts and bones, and a trout on the rack doing the same.
+- Stock cooked and then a broth from it.
+- A full satchel at Cook (the yields go to the basket, or to the ground).
+- `checkRecipes` clean, no console errors.
+- Cost: two more find kinds and one small chip; nothing new a frame while fishing. No timing needed.
+
+### Settled / open
+- **Settled (Axel, 2026-10-22):** cleaning is folded into Cook and the drying rack, not an act of its own: no new
+  chore between the catch and the pot, and no "cleaned" twin of every fish's id.
+- **Open:** whether guts go off after a few days. There's no spoiling anywhere yet, so I'd say no.
+- **Open:** whether a bait can bend the hour, e.g. guts bringing an eel up at dusk as well as at night. I'd leave it
+  out at first.
+- **Later:** a small roach as live bait for a pike (with the pike, stage 10's "later"). Guts left out at camp drawing a
+  visitor (the heron, or the hedgehog), which would tie into the visitors coming back.
+
+## Stage 12: cooking by hand (planned 2026-10-22)
+
+Axel, 2026-10-22: the dishes feel like they have no purpose and aren't connected to the world; there's no reason to care
+which one you cook, and you can't look at them, though they're the most beautiful thing in the game. This is mainly a
+cooking game, so cooking has to be the part you care about, and right now it's a menu: put things in, Cook, wait, an
+icon. Three things are wrong, and this stage takes them together because each fix leans on the others:
+1. **Cooking is chosen, not done.** You never do anything to the food.
+2. **A dish has no reason to be** beyond the tummy, so which one you make doesn't matter.
+3. **You never see a dish.** 128 px of painting shown at 48, and the camera at the fire can't come closer than the
+   meadow is painted for (`nearMost`), or the meadow blurs.
+
+The answer: **every step is a thing the forager does with its hands, in the meadow**; doing them well makes a better dish,
+and the better dish *shows*, big, in a moment made for looking at it. It starts with one soup cooked the whole way by
+hand, played and tuned like the fishing bar, before anything else changes.
+
+### The rule
+- **One verb per vessel.** Like fishing's bar, each vessel gets one small physical thing to do, never a minigame stacked
+  on a minigame. The pot: fill it, boil it, stir it. The pan: heat it, flip. The stick: turn it over the flames. The
+  bowl: tear and toss. The block: chop.
+- **In the meadow, no window.** It happens where the fire is, at the meadow's size, with the camera leaning in as it
+  already does (`cookCam`). Small parchment prompts close to the action, nothing big.
+- **Nothing is ever lost by doing it badly.** A rough step makes a rougher dish, never no dish (a burnt pot is a
+  "bit burnt" soup, and the forager's mess stays for things that don't make a dish at all).
+- **Done well shows.** A step done well is seen in the dish's name, its pips and the close-up, not a hidden number.
+- **Mastered dishes go quicker.** The care is for new and hard dishes, never the twentieth of the same (see Mastery).
+
+### The first soup: watercress
+**Watercress soup** (pot: watercress, watercress, any greens), because the stream gives both the water and the cress:
+walk to the stream with the pot, pick cress, fill up, go home. One trip that ties the dish to a place in the meadow.
+Every step below is built for this one soup first; the rest of the pot's dishes follow once it feels right.
+
+### The pot is a thing
+Today a vessel belongs to a fire (sim.js `F.own`, made at that fire) and exists only as a slot in the cooking strip. A
+pot that's filled at the river has to be a thing in the world:
+- **A pot in the meadow** (`w.pots`, one shape for life, made with `potOf`): where it is (`x`, `y`), on which fire
+  (`fire`, an index or -1), in whose hands (`held`, a forager id or -1), how much water (`water`, 0 to 1), how hot
+  (`heat`, 0 to 1), what's in it (`things`, `thingsN`), how well each step went (`marks`: boiled-before-in, chopped,
+  stirred, burnt, all fractions from `-0`), and the dish it'll make (`dish`). One pot to start; making a second is
+  the clay pot's craft as it is.
+- **Carried in the hands** (`f.hand = 'pot'`, the hands from stage 9, built): the forager holds it in both mittens. A full
+  pot sloshes as it walks and spills a little at a run (the dish slop and spill are already built: `spill`), so you
+  walk it home. Set down by a tap on the ground, set on a fire by a tap on the fire.
+- **Filling it:** at the water's edge (any water, the shallows too), a tap on the water with the pot in hand: the forager
+  crouches and scoops (the gathering stoop), a glug, and the water rises in the pot in two or three scoops (a tap each,
+  or one hold). The water level shows in the pot's painting from above (`POT_WATER` steps: empty, a third, two thirds,
+  full).
+- **The other vessels stay at the fire** for now (`F.own`); the pan, the stick, the stone and the bowl become things
+  only when they get their own verbs.
+
+### The boil
+On a lit fire the pot's water warms with the fire's strength (`heat` rises by `F.fuel`, slower the fuller the pot):
+cold, steaming, a simmer (small bubbles at the edge), a **rolling boil** (the surface broken, steam pouring). Four
+painted states of the water (`BOIL_ARTS`), not drawn per frame: the bubbles are a few small sprites on a cycle. A boil
+needs the fire kept up: the stick that feeds it is already in the cooking bar. Left boiling with nothing in it, the
+water goes down slowly (top it up at the stream); boiled dry with things in it, it catches (`burnt`).
+
+### The block
+A **chopping block** (`BUILDS.block`, at camp: a sawn round with a flat stone on it, 4 sticks + 1 pebble, early in the
+ladder). With the satchel's things in reach, a tap on the block lays one on it and **taps chop it**: three to five
+taps, each a knock and a cut sound, the thing going from whole to prepared in as many painted steps. What it does
+depends on the thing, by tag, so the paintings are per tag, not per ingredient: greens and cress are **torn** or roughly
+chopped, mushrooms **sliced**, garlic **crushed** under the flat of the knife, nettles chopped with the mittens on,
+fruit **halved**. Prepared things are laid on a **board** that sits on the block (holding as many as the pot's slots);
+the board is then carried to the pot in the hands and tipped in. No new "chopped" ids: a prepared thing is a thing on
+the board, and goes into the pot as itself with the `chopped` mark.
+
+### Into the pot, and stirring
+At a boil (or not: cold water in is allowed, it just marks the soup), the board is tipped in with a splash and the
+things sink and bob. The cook then is the **simmer**: the dish's `time` as it is now, but you can see it in the pot.
+Now and then (two or three times a cook) the pot wants **a stir**: a little ring of rising bubbles at the edge and a
+"blup". A circular drag over the pot (or a hold on a computer) stirs it, the spoon going round; a stir missed leaves
+the bottom catching a little. Walk off and it carries on simmering, as it does now; it only burns if it boils dry.
+
+### How well, and how it shows
+The marks make the dish's **grade**, worked out as it's ladled (`gradeOf`, three steps plus burnt):
+- **Rough**: cold water in, things whole, or no stirring.
+- **Good**: most of it done.
+- **Perfect**: in at a boil, all prepared, every stir.
+- **A bit burnt**: boiled dry once, whatever else went well.
+
+The grade goes into the dish's name ("Perfect watercress soup", "Watercress soup, a bit burnt"), its fill and warmth (a
+small step either way), and how it's shown, never a painting of its own (Axel, 2026-10-22: no sprites per grade): one
+painting a dish, as now, with the grade in its name, its pips, and the close-up's handwriting, and at most a touch laid
+over the same painting by the meadow (a perfect dish steams a little more). The book's page keeps your best grade for each dish (`f.best`, beside fishing's
+`f.fishBest`).
+
+### Ladling and the close-up
+Done, the pot is **ladled** into a bowl (a tap; the bark bowl, or a clay bowl later): a pot makes **two or three
+bowls** (`servings` per dish, the "portions" stage 9 put off), so a good soup is one to share, or one now and one on the
+table. Each bowl is a dish in the hands, as today.
+The first bowl gets **the close-up**: the camera leans in past `nearMost`, and the meadow behind goes soft. As the lean
+starts, the meadow canvas is copied once into a small canvas, blurred once (the one `ctx.filter` this costs, not per
+frame), and laid stretched behind; the forager, the fire and the bowl stay sharp in front at their painting size.
+The bowl is painted for it at **256 px** (dish-painting.md's box at twice the size), so for a second or two the dish
+fills the middle of the screen, steaming, with its name and grade in handwriting under it. A tap or a step away ends it.
+It's a short moment, not a screen: about 2 s, then the camera eases back with the bowl in your hands.
+
+### Why a dish (the start of it)
+A dish needs reasons to be cooked, and this stage only starts them: the grade (a better dish fills and warms more), a
+**dish's use** tied to what's coming (a few dishes, by `does` in recipes.js: a warm soup keeps you warm longer through a
+cold night, honey and fruit give sprint, dried fish fills on a long walk; the warmth and stamina systems already exist),
+and the table (stage 9 step 2), where a bowl is set down and stays as a thing in the world. Guests and meals come after.
+
+### Mastery
+A dish cooked to good or better a few times (`MASTER`, about 5) is **known by hand**: its steps go quicker (a chop is
+one tap, a fill one scoop, stirs come less often), and from cooking level 4 or so the block can chop a whole board at
+once. A new dish, or a hard one, stays fully by hand. That keeps the twentieth watercress soup short and the care where
+it's interesting.
+
+### What it changes in what's built
+- The cooking strip at the fire (b902a66: the rings over the pot, "You could make", Cook, the timer) stays for the vessels
+  not converted yet. For the pot it becomes a short guide of the steps for the dish you're making ("Fill the pot · Bring
+  it to a boil · Chop · In · Stir"), each ticked as it's done.
+- Stage 11's cleaning was settled as folded into Cook ("no new chore"). With a block it could be a step on it instead
+  (a flick of the knife), or stay folded in: Axel's call (open, below).
+- The cook state moves from the fire (`F.cookDish`, `F.cookLeft`) onto the pot for the pot; the other vessels keep the
+  fire's for now.
+
+### Building it
+Each its own branch, played before the next. Placeholders first, painting after the feel's right, as fishing did:
+1. **The pot as a thing.** `w.pots`, carried in the hands, set down, set on a fire, filled at the water, the slosh and
+   spill, the water level shown. Playable: does walking the pot to the stream and back feel good, or a chore?
+2. **The boil.** Heat from the fire, the four states, boiling down, topping up.
+3. **The block and the board.** `BUILDS.block`, chopping by tag, the board carried and tipped in.
+4. **The simmer and the stir**, the marks, `gradeOf`, the grade in the name. Watercress soup cooked start to finish.
+5. **The close-up**, the watercress soup's painting at 256 px (the same painting, painted bigger).
+6. **Play and tune** with Axel. Then: the table (stage 9 step 2), mastery, servings, and every other pot dish.
+7. Later, one at a time: the pan (heat, flip), the stick (turn it, don't char it), the bowl (tear and toss), each a
+   thing in the world when it gets its verb.
+
+### The sim and the keep
+- `w.pots: []` in the world's `LATER`; a pot made in one shape (`potOf`), fractions from `-0`, set back to its blank,
+  never deleted. A kept meadow whose fire owns a pot (`F.own`) gets a pot on that fire, empty, as it opens
+  (`unpackWorld`); no `KEEP_VERSION` bump if unpack fills it.
+- The heat, the boiling down and the simmer run in the sim (a `potsTick` every few ticks), so a pot left on the fire at
+  speed does what it should and a friend sees the same pot. The taps (fill, chop, stir) are game.js's and land in the sim
+  as small calls (`fillPot`, `chopOn`, `stirPot`), as gathering does.
+- Friends: the pot and the block are the meadow's, like the basket: a friend can stir your soup, fill your pot, or
+  chop on your board (`'pot'` messages on the tick).
+
+### Checked by
+Watercress soup cooked start to finish at each grade on a computer, an upright phone and one on its side, by touch
+(`garden.cookTest()` in the dev panel to give the cress, a pot and a block by a stream); walking a full pot home at a
+run spills some; a pot left on the fire boils dry and burns; the close-up at 1400x900 and 390x844; a friend stirring;
+the round-trip with a pot full and on the fire; no console errors. Cost: one pot painting a frame (cached by
+state), a few bubble sprites, the close-up's one blur as it starts. Time `render` once with the close-up open.
+
+### Settled / open
+- **Settled (Axel, 2026-10-22):** start from one soup cooked fully by hand; vessels become things in the world; the
+  dishes are to be seen big; the stage 9 table is the base where a dish stays; no sprite per grade (one painting a
+  dish, the grade in words and pips).
+- **Open:**
+  - The first soup: watercress (the stream gives the water and the cress) or nettle (more to chop: nettles, mushroom,
+    greens).
+  - Mastery: steps going quicker after five good cooks, or every cook stays fully by hand?
+  - The chopping block as a camp build, or chop on any flat stone, or in the hands?
+  - Fish cleaning: a step on the block, or stays folded into Cook as stage 11 settled?
+  - Servings: two or three bowls a pot, or one?
+  - The close-up: the meadow blurred behind for a moment (my pick), or no closer than the meadow allows and the dish
+    seen big only on the table?
+
+### As built: steps 1 and 2, the pot as a thing and the boil (2026-10-22, uncommitted on main)
+Placeholders, to play. The pot (`w.pots`) sits on the fire it was made at; Lift in the cooking bar (or a tap on it on the
+ground) puts it in the hands. Carrying it, a tap on water fills it (three scoops, kneeling on the bank or wading in), a tap
+on a fire sets it on, a tap on yourself (or H) sets it down. Sprinting slops some out. On a lit fire it warms (30 s at 1x
+to a rolling boil for a full pot on a fed fire, a third of that empty), steams, simmers, boils, and boils down (4 min at
+1x full to dry at a rolling boil); off one it cools. Its water level and boil show over the fire and in the cooking view,
+off a fire as one of four paintings. A pot dish now needs water in the pot, cooks only while it simmers ("Coming to a
+simmer"), and takes the water with it. Notes in `.claude/docs/cooking.md`. Not done: friends seeing the pot move, a real
+glug (a plop and a slosh stand in), the pot's own painting off the fire (the kit's, with water), the burnt mark shown
+anywhere but a line. Things to feel out when playing: is the walk to the water a pleasure or a chore, are 30 s to a boil
+and three scoops right, and does the soup taking all the water feel fair.
+
+### As built: step 3, the block and the board (2026-10-22, uncommitted on main)
+Placeholders, to play. The chopping block is a camp build (4 sticks, a pebble). A tap on it kneels the forager there; a tap on
+a satchel thing lays it on the block, and taps chop it (2 to 4 by recipes.js `PREP`: torn, crushed, chopped, sliced, halved,
+cracked; fish and honey go in whole), each a knock and a cut, the thing in more and smaller pieces, then onto the board (four
+things at most). A tap on the block with nothing on it lifts the board; carried to the fire the pot's on, a tap tips its
+things into the pot's rings, and the board's back on the block. The dish keeps what share came off the board (`chopped`) for
+step 4's grade. Notes in `.claude/docs/cooking.md`. Not done: a painting per cut (the pieces are the satchel painting, smaller),
+the knife moving, friends seeing what's on the board, the board's things shown while it's carried. Things to feel out: are
+2 to 4 taps a thing right, is walking the board to the pot worth it with the block a few steps away, and should the board tip
+in only what the dish wants (it tips all of it: four things on it make a mess of watercress soup, which wants three).
+
+### Rethought: step 3 as a cooking lab first (2026-10-22)
+Axel didn't like how step 3 came out: too many taps for a three-thing soup, chopping by tap count is mindless, at the
+meadow's size you can't see the chopping, and a block apart from the pot (carrying the board over) feels pointless. He
+wants the chopping to be a thing you do with your hands and see. So before any more of it goes into the game, a test of
+its own: `cooking-lab.html`, two scenes seen from above, the board and the fire's pot, a brass arrow on the side to go
+between them. Drag across a thing to cut it along the line (each piece is the same items.js painting clipped to its side,
+the cut edge in the thing's inside colour, and pieces cut again); drag from a piece to sweep it with the flat of the knife;
+off the board's right edge it waits at the fire on a flat stone; swept into the pot it drops in; drag round in the pot to
+stir. Settled with Axel: sweep off the edge to get things to the pot, a pure toy first (no score), one straight slice for
+everything, the fire only a pot and a stir. Once cutting feels satisfying, decide how it comes back to the meadow (a block
+beside the fire, or chopping at the pot, a lean-in like the close-up) and what makes a cut good. The step 3 block in the
+game stays as built until then.
+Then (same day) Axel: no knife, make it like Fruit Ninja. So no knife is drawn: a swipe leaves a glowing tapering trail, the
+halves fly apart spinning, juice splashes and spots the board (fading), a quick swipe swishes (sound.js `swish`), and three
+or more cuts in one swipe pop a word. A drag that starts on a piece cuts if its first move is quick (`SWIPE`, 900 px/s),
+else sweeps; only a sweep takes a piece off the right edge (a flung half bounces off it).
+
+### As built: the board at the fire (2026-10-22, uncommitted on main)
+The lab's board came into the game at the fire, not a block apart: cooking with the pot, a tap on a thing that wants getting
+ready lays it on the board, a fullscreen scene as in the lab (Axel, same day: first it leant in over the blurred meadow with the
+cooking bar under it; he wanted the lab's view): the board on grass, a strip at the foot of what else can go on it, the arrow
+on the right back to the pot.
+Swipe to cut, sweep off the right edge into the pot; empty, it leans out and the cut pieces drop into the pot as they were cut,
+and show there while it cooks. A drag onto the pot still puts a thing in whole. The block build is no longer made. board.js is
+the one copy of the cutting, the lab and the game both use it. Checked with a CDP driver on a computer and an upright phone
+(touch): cut, sweep to the screen's edge, lean out, Cook. Not done: the lab's second scene (the pot from above, stirring); what a cut is worth (the `chopped` mark is how many pieces
+against `prepOf`, to be the grade in step 4), friends seeing the board, the simmer and stir (step 4). To feel out: does fading
+out by itself when empty feel right, and the swipe speed (`SWIPE`) by finger.
+
+## Stage 13: the legend (planned 2026-10-22, after stage 12)
+
+From a video Axel watched (Sagan Hawkes, "Monsters Hiding Inside Your Games...": the Freezer in Saints Row 2, Bigfoot
+and the ghost cars in San Andreas, Herobrine). What it says, and what this stage is built on: the best game legends are
+**never confirmed**. A myth that's proven becomes an Easter egg and loses its pull; what keeps players looking is not
+knowing. And most of a legend is ordinary things seen by someone primed for it: a tree loading in at dusk, a footstep
+that plays a beat late, a chicken falling. So the meadow gets something that's only ever half seen: a tall shape at the
+edge of the woods, a hush before it, a footstep too many, and food left out that's gone by morning. It's eerie in a cozy
+game the way a fairy tale is, never horror: it never comes close, never chases, never hurts.
+
+It has **no name in the game**. Nobody says what it is, and there's no sign, page or caption for it. (The Nobody's Meadow
+idea, the legend as whoever Nobody is, is dropped: the game is being renamed.) In the code it's `legend`.
+
+### The rule
+- **Never confirmed.** No inspector entry, no journal page, no news, no caption, no level-up, no sound that says "you
+  found it". Nothing in the UI ever admits it's there. A player can't prove it to a friend from inside the game.
+- **Never close.** Seen only far off, at the edge of the screen's view of the woods, and never for long. Walk toward it
+  and it's gone before you're near. It never moves toward the forager.
+- **Rare.** The first glimpse not before the first autumn, then a few a year at most. Most players see it once or
+  twice and wonder.
+- **Mostly made of real things.** For every real glimpse there are false ones made of what's already there (a stump with
+  the light behind it, a crow lifting, a doe-shaped bush), so seeing something is never proof.
+- **Changes nothing.** It eats nothing the meadow counts and takes nothing from the sim's balance; its chances are hashed
+  from the day (as the visitors' are, `visitDay`), not drawn from `w.rng`, so the meadow runs the same with it.
+
+### Where and when
+- **Its places:** the deep woods (tiles far from the open, thick with trees standing) and the far bank of the widest
+  water. Worked out once a day, as the visitors' places were (`placesDay`).
+- **Its hours:** dusk, dawn, and fog. Fog makes it likelier (sim.js `WEATHER.fog`; sound.js already lowers the birds
+  and the wind in fog and has a `hush` in the mix).
+- **Its days:** hashed from the day and the meadow's seed. A day it could come is a **legend day**; on a legend day a
+  glimpse can happen once, if the forager is out of camp and the camera is looking at one of its places.
+- Per player: whether a glimpse shows is decided on each player's screen, not in the sim, so with friends one can see it
+  and the other not. That's how a legend spreads: "I swear I saw something by the far bank."
+
+### The hush (the omen)
+Before a glimpse, the meadow's living sounds go: over about ten seconds the birds, crickets, frogs and the wind chime
+fade out of the ambience mix (sound.js, the mix in `tickAmbience`: one `omen` factor, 0 to 1, multiplying those layers),
+while **the wind keeps blowing**. So it doesn't sound muted; it sounds like everything that breathes has stopped. The
+chime going quiet fits on its own: it rings with the rabbits, and the rabbits go to ground.
+In the meadow, the same few seconds: rabbits near it bolt for their burrows, the frogs on the bank go under, crows lift
+and go. These are the animals' own moves (fleeing, diving), just started together; the sim isn't changed, game.js only
+nudges what's on screen (a flee started a little early), so it costs nothing and keeps nothing.
+After the glimpse the sounds come back **slowly, one at a time**, crickets or birds first, the chime last, over half a
+minute.
+A hush with no glimpse after it happens too (most legend days), and so does a glimpse with no hush (rarely). The hush is a
+sign, never a promise.
+
+### The late footstep
+Now and then during a hush, as the forager stops walking, **one more footstep** plays a beat later (sound.js `step`, the
+same sound, a little softer and panned a touch to the side the woods are on). Never two, never while walking, never
+outside a hush. It's the Minecraft sound lag the video talks about: the eeriest thing in it was nothing at all.
+
+### The glimpse
+- **On screen one to two seconds.** It's simply there when the camera comes to rest on one of its places, standing between
+  trees, and gone the next time the camera moves, the forager turns toward it, or two seconds pass. It never fades in or out
+  while you look: it's there, then it isn't.
+- **Uncanny, in the game's own style: the almost-person** (legend-lab.html, A8 on the tuning sheet: `almostOf({ tall: 1.2,
+  head: 0.8, reach: -17 })`; picked by Axel 2026-10-22). Painted like everything else (soft, storybook), so it belongs to
+  the meadow, but off. A person in a long coat, nearly: about 1.8 times a person's height, its head up among the lower
+  branches; the head small for it; the arms long, the hands hanging down at its knees, well past the coat's hem. The coat
+  is as wide as a person's would be, so the arms hang close against it. No face and no eyes, so you can't tell if it's
+  looking at you or walking away. It stands **perfectly still** while
+  the trees round it sway: in a meadow where everything moves a little, stillness is what reads as wrong. Dark against the
+  light (dusk behind it). Why this works, from reading on the uncanny valley: unease comes from a mix of human and
+  not-human cues, by a little (a pile of monster features just reads as "monster"); proportions set slightly wrong unsettle
+  more than an odd part does; and creepiness is not knowing whether there's a threat at all, so it gives nothing to read.
+- **Its light and shadow are wrong.** The low sun catches it on the side away from the sun, and it has no shadow (or one
+  falling the wrong way for the hour). Players won't name it, but they'll feel it.
+- **Where it stood:** walk there and there's nothing, or now and then a sign that could be anything: a long print in the
+  frost or mud, a bent sapling, a tuft of grey on a bramble. Signs are ground marks painted once (as the visitors' tracks
+  were, `w.signs`), and go by the next day.
+- **The false glimpses:** on other dusks, a stump or a split trunk at the same edge with the light behind it, which looks
+  the same from far off and is plainly a stump once you get close. The trees already have stumps and fallen logs
+  (`stump`, `fallen`); this only picks one at the right edge at the right hour and lets the dusk do the rest.
+
+### Offerings
+A dish set down at the edge of its woods after dark (stage 9 lets a dish be set down and stay a thing in the world) is,
+some mornings, **gone**. Nothing says who took it. And it really could be anyone: the foxes and crows are in the sim, and
+the plan is that they do sometimes take food left out (a fox carries off meat or fish, the crows peck at bread and fruit).
+So an empty spot proves nothing.
+On a legend day, an offering is taken **cleanly** (no crumbs, no prints but long ones), and sometimes something is left in
+its place: an odd feather, a smooth stone with a hole in it, a rare find out of its season. These are real items (in
+`recipes.js`, a few of them, never used up by a recipe, kept or set down), so they're the one thing you can hold. They
+still don't prove anything: the stone with the hole might have been there all along.
+Offerings are the meadow's (the sim's), so a friend sees the dish gone too.
+
+### The old stone and friends
+- The old stone (stone.js) can be asked about it and answers vaguely, and differently each time: sometimes it saw
+  something, sometimes it's sure there's nothing in the woods but deer, sometimes it changes the subject to soup. It's
+  given a few lines of lore in its prompt and told never to confirm or describe it.
+- Friends: each player's glimpses are their own. The hush is played on each screen by itself too. An offering is
+  shared. So two friends can stand together while only one of them sees it, which is the point.
+
+### How it looks and sounds
+- One painting of the shape (painted once, handed over as an ImageBitmap, `asBitmap`), drawn for a second or two on a few
+  days a year: no cost worth timing. It's drawn among the trees in their depth order so it can stand behind a trunk.
+- No sway on it (that's its whole trick), so it needs nothing per frame beyond one `drawImage`.
+- The hush is one number in the ambience mix; the late footstep is one `step` call.
+- No new full-screen pass. If the dusk wants darkening round it, it's a touch on the sky washes already laid
+  (`skyWash`), not a pass of its own.
+
+### Building it
+Each step played before the next, like the fishing bar:
+1. **The hush and the late footstep.** The `omen` factor in sound.js's mix, ramping down and back, and the extra step.
+   Forced from the dev panel (`garden.omen()` in `DEV`). Played alone first: does the silence feel off without anything
+   being seen?
+2. **The glimpse.** The painting (a sheet of three or four looks to Axel first, as dishes are), its places, the camera-rest
+   rule and the vanishing, its wrong shadow, the false glimpses on stumps. `garden.glimpse()` in `DEV` puts it in view.
+3. **Legend days.** The hashed days, the rarity, fog and dusk, the hush leading the glimpse, the animals' moves.
+4. **Signs and offerings.** The ground signs, the dish taken cleanly, the gifts in recipes.js; foxes and crows taking food
+   left out on other nights.
+5. **The stone's lines** and friends (per-screen glimpses, shared offerings), checked with two tabs.
+
+### The sim and the keep
+- The legend days, places and offerings are hashed from the day and seed, so they need nothing kept. An offering is a dish
+  set down (stage 9's), already kept; taking one is clearing it. The gifts are ordinary items.
+- If the foxes and crows take food left out, that's new sim work: headless over a few years and several seeds, nothing
+  the cooking needs dies out, and `packWorld` / `unpackWorld` round-trips.
+- No field is added to the forager for it. Whether a player has ever seen it isn't stored anywhere (so nothing can
+  confirm it), except what's needed for "the first glimpse not before autumn", which is the day count.
+
+### Checked by
+A forced hush at day, dusk and in fog (does the wind stay, do the sounds come back in order); a forced glimpse at
+1400x900, 390x844 and 844x390, behind a trunk and in the open; that it vanishes on a camera move and on the forager
+turning; a false glimpse on a stump; an offering left on a legend night and on a plain one; two tabs, one seeing it;
+no console errors; the stone asked three times gives three different answers and confirms nothing.
+
+### Settled / open
+- **Settled (Axel, 2026-10-22):** never confirmed; glimpses, never a meeting; uncanny but on screen only briefly; the
+  ambient sounds go quiet before it (the wind stays); a footstep a beat late; offerings; no "Nobody" (the game is being
+  renamed); its look is the almost-person, tuned as A8 in legend-lab.html (tall, small head, hands at the knees).
+- **Open:**
+  - How rare: a few legend days a year, or one a season? And the first one in the first autumn, or later still?
+  - What's left for an offering, and whether those gifts do anything (a lucky stone that brings a fish sooner?) or are
+    only kept.
+  - Foxes and crows taking food left out on other nights: needed to make an empty spot mean nothing, but it's new sim
+    work; the alternative is that nothing else ever takes an offering, which makes every empty spot proof.
+  - Whether it can ever be seen by two friends at once (never, my pick, or very rarely, which they'd talk about for weeks).
+  - The code is public (GitHub Pages), so anyone reading game.js can find it. Accept it (cozy players don't datamine,
+    and the GTA myths survived people digging through the files), or keep its parts plainly named and boring.
+
+## Stage 14: the haul, and tools that wear (planned 2026-10-23)
+
+Axel, 2026-10-23: fishing should be more fun and more rewarding, with more than fish coming out of the water, as in
+Minecraft. But the good things have to be earned: rare, and only for a high fishing level, never in the first few casts.
+Right now a bite is always one of four fish (recipes.js `FISH`), and the skill makes the bar easier and a perch or trout a
+little likelier (`PRIZE_MORE`). Nothing new ever comes up as you level, so levels don't feel like much. This stage gives
+the water a **haul**: things that aren't fish, in tiers that open with the level and get rarer as they go. It also gives
+the rod **wear**, in a way any tool can use later (an axe, a knife, a spade).
+
+### What comes up
+Four tiers. The odds are a bite's, rolled once when the fish (or the thing) takes the hook, in `fishKind`, before the fish
+are weighed against each other. The level counts from `SKILLS.fishing` (`per: 3`: level 1 at 3 catches, 3 at 18, 5 at 45,
+8 at 108, the top, 10, at 165). With the slower bites of 2026-10-23 a catch is about 30 to 40 s from cast to landed, so
+level 5 is roughly half an hour of fishing and level 8 over an hour.
+
+1. **Bits from the water** (level 0, about 6% of bites). Things the meadow already has, so no new paintings: a
+   waterlogged stick (`stick`), a clump of reeds (`drygrass`), clay off the bottom (`clay`, still water), a pebble
+   (`pebble`), a curl of birch bark (`birchbark`, more under trees by the water). More in running water, where things
+   wash down. They feed the make strip, so a slow day at the water still gives something. A bit takes no fish from the
+   sim's stock (`takeFish` isn't called). It fights in the bar as a dead weight (`drag: 'dead'`): it sinks slowly and
+   evenly, never darts, never runs, so you can tell it isn't a fish before it lands, and it's easy.
+2. **Water food** (from level 3, about 8%). New ingredients, each with a dish or two:
+   - **Freshwater mussels** (`mussel`): still, deep water, all seasons but winter, come up 2 to 4 at a time.
+   - **Crayfish** (`crayfish`): running water, summer, mostly at dusk and night. A scrabbling fight (`drag: 'scrabble'`:
+     small quick wriggles, no runs). This is stage 10's "crayfish traps" brought in by the rod instead.
+   - **Water mint** (`watermint`): a tangle caught on the hook near reedy banks, spring and summer. A green, tagged
+     `greens`, so the any-greens dishes take it too.
+   Dishes (placeholders, to settle with Axel): Mussels with wild garlic (pan), a crayfish boil (pot: crayfish, crayfish,
+   water mint, any greens), trout with water mint (stick). Each painted in dishes.js. These count as `prize` against the
+   fish, so the level's `PRIZE_MORE` lifts them too.
+3. **Treasures** (from level 5, about 1%, rising to 2.5% at the top). Each is **once per meadow**, and none comes twice
+   till all have come. They fight heavy and slow (`drag: 'heavy'`: a strong steady sink, one long pull, a glint in the
+   bar, "Something heavy…"), harder than a trout, and lost in the bar a treasure is **not** used up: it can bite again.
+   - **A bottle with a recipe in it** (three bottles, three recipes). Each teaches a secret dish found no other way,
+     marked in the book with a small bottle. The three recipes are open; my picks lean on what fishing gives (one eel,
+     one with mussels, one sweet: elderflower and honey).
+   - **A sunken copper pot.** A second pot that heats quicker and holds one thing more. With stage 12, a pot is a thing in
+     the world (`w.pots`, `potOf`), so this is a pot with a `copper` flag, painted green-brown with a dent.
+   - **Something to wear.** An old fisher's cap and a long scarf, hats and cloaks for the wardrobe that are **locked**
+     till fished up (the wardrobe today offers every hat from the start: these are the first found ones, `w.worn`).
+   - **A pearl in a mussel.** Only from a mussel haul at level 5+, about one in forty. A keepsake set out at camp, worth
+     a cosy deed (`DEEDS.pearl`, "Found a pearl", 2 points, `from: 1`).
+   The Finds get a page for them, "From the water: 3 of 7", with the ones not found shown as a faint outline and no name.
+4. **Old fish** (from level 8, only in their place and time; Axel didn't answer this one yet). One or two big named
+   fish, as Stardew's legendaries: the old pike in deep still water at dusk in autumn, a golden carp after rain in
+   summer. Each fights harder than anything else (`REEL_BIG` and more, two last runs) and comes once per meadow. Landed, it
+   can be eaten or kept, mounted on a board at camp. Built last, if at all.
+
+**Luck.** A few small lifts to the treasure odds, so playing well pays, none of them needed: the last catch was perfect
+(×1.3), rain or dawn (×1.2), and stage 11's bait. A **shiny lure** could be one of the baits: no more bites, but treasures
+×2 and bits ×1.5. Never more than 4% a bite all told.
+
+### The pop over its head
+Every catch, fish or not, floats up over the forager's head as a small pill: its icon, small, and "+1 Perch" ("+3
+Mussels", "+1 Sunken copper pot"). That's gathering's `floatOf` pill ("+3 Chanterelles"), painted once, placed above the
+head as the xp floats are (`drawXpFloats`), and rising after them so the two don't overlap. A fish still says its weight
+after the name ("+1 Perch · 420 g"); it takes over from today's `say` in `landFish`. A treasure's pill is gold-edged
+and stays a little longer. A new biggest still says so. Nothing new a frame but the one pill while it rises.
+
+### Tools that wear
+Today the rod is stack 1 and lasts forever. Now a tool has **uses**: data in recipes.js, so an axe or a knife later is
+one line.
+- **The data.** An ingredient tagged `tool` gets `uses` (the rod: 60) and `mend` (what puts it back to new at the make
+  strip: the rod, 1 rope). `checkRecipes` wants both on every `tool` and nothing else.
+- **What wears.** A tool's own code says how much a thing costs, through one `wear(w, f, slot, n)` in sim.js. The rod:
+  a catch landed 1, a fish or a treasure lost in the bar 2 (the line strained), a treasure landed 3. A cast, a nibble or a
+  miss costs nothing. The fishing level spares it (a new perk, `care`: 4% less wear a level, rounded on a hash so it's
+  steady), so 60 uses is about 60 catches at level 0 and nearer 100 at the top.
+- **Where it's kept.** Every store has its slots as two arrays (`bag`, `bagN`: the satchel, the basket, the rack, the
+  board). Each gets a third, `bagUse` (uses taken, 0 when new), made with the others in their blanks (`foragerOf`,
+  `basketOf`, `rackOf`, `blockOf`), and a dropped thing gets `use` in `dropOf`. Anything that moves a slot (stow, drop, put
+  in the basket, gifts, Tidy) carries it along. A tool never piles: `dropSlot`, `stow` and the basket's Tidy keep each in
+  its own slot even when two are the same kind (today two dropped rods would merge into one pile). A kept meadow from
+  before gets every `bagUse` filled with 0 in `unpackWorld`: no `KEEP_VERSION` bump.
+- **How it shows.** A thin bar under a worn tool's tile, in the satchel and the basket, green to amber to red (Minecraft's,
+  but in the game's own inks), rewritten only when the wear changes. None on a new one. The tile's card says "41 of 60
+  left".
+- **Fraying.** At a fifth left, once: "The line's fraying" over its head, and the bar pulses once.
+- **Breaking.** At none left, it breaks **after** the catch that used it up lands, never mid-fight: a snap and a little
+  creak (sound.js `angle` `snap`), "The rod snapped", it's gone from the slot, and a stick drops at its feet. The line
+  is pulled in and fishing mode is left. Making a new one is the same 2 sticks and a rope.
+- **Mending.** With a worn tool in the satchel, its tile comes back on the make strip as **Mend** (`rodMade` lets it,
+  greyed while it's new), for its `mend`. Mending a broken tool isn't possible (it's gone). Mending is cheaper than making,
+  so keeping a rod in good shape pays.
+- **Friends.** A guest's satchel comes and goes with its `bagUse`. A gift carries the wear (`'gift'` message gets `use`).
+
+### Building it
+Each its own step, played before the next:
+1. **Wear.** `uses`, `mend`, `bagUse` in every store, `wear`, the bar on the tile, fraying, the snap, Mend at the strip.
+   Playable on its own, with the rod. **Built 2026-10-23** (`.claude/docs/fishing.md`, "The rod wears"): a broken rod leaves a stick;
+   wear's part of a use is rounded on a hash of the tick.
+2. **The pop.** The pill over the head for every catch, fish first. **Built 2026-10-23** (`headPop`, in the practice
+   floats' stack; fishing.md, "The pop over its head").
+3. **Bits.** The haul table (recipes.js `HAUL`, beside `FISH`: `id`, `from` level, `odds`, `water`, `seasons`, `hour`,
+   `n` how many, `drag`, `once`), the roll in `fishKind`, the dead-weight fight, the pill. **Built 2026-10-23** (fishing.md,
+   "Bits from the water"): `hour` and `once` wait for the tiers that need them; `current` and `trees` lift the odds where
+   the water runs and under trees (still water about 6%, running water under trees about 10%).
+4. **Water food.** Mussels, crayfish and water mint: ingredients, items.js paintings, their fights, the dishes. **Built
+   2026-10-23** (fishing.md, "Water food"): the dishes as planned.
+5. **Treasures.** The bottles and their recipes, the copper pot (after stage 12's pots, or as a vessel in the cooking
+   strip if that comes first), the locked wardrobe pieces, the pearl and its deed, the Finds page, the luck. **Built
+   2026-10-23** (fishing.md, "Treasures"): the bottles teach Honeyed eel, Fisher's mussel broth and Mint tea with honey (the
+   plan's sweet pick, elderflower and honey, was already Elderflower fritters); the scarf became an oilskin cloak; the copper
+   pot heats twice as quick but holds no more; `w.worn` folded into `w.hauled`; no shiny lure (no bait yet).
+6. **Old fish**, if Axel wants them.
+
+### The sim and the keep
+- `w.hauled` (the world's `LATER`, `[]`): the once-per-meadow things already come up, so a kept meadow from before gets
+  none. `w.worn` likewise (the wardrobe pieces found). A friend's treasure comes off the host's list through the `'land'`
+  message, as a fish does from the host's water, so two friends can't both fish up the one pot.
+- `HAUL` rolls on the forager's own random numbers, like the bite, not the meadow's (`w.rng`), so a headless run is
+  unchanged.
+- Headless, a few years over several seeds: nothing changes (no forager fishing), and `packWorld` / `unpackWorld`
+  round-trips with `bagUse` in each store, `w.hauled` and `w.worn`.
+
+### Checked by
+- A headless count over `fishKind` at levels 0, 3, 5, 8 and 10: the tiers' shares come out as above, nothing past level 0
+  at level 0, treasures never more than 4%.
+- `garden.fishNow('mussel')`, `garden.fishNow('bottle')` and the like to skip the wait; `garden.wear(n)` in dev.
+- A rod worn to fraying and snapped, mended, given away and taken back, put in the basket and Tidied with a second rod,
+  dropped on another rod (two separate things on the ground).
+- The pill over its head beside an xp float, at 1400x900, 390x844 and 844x390.
+- `checkRecipes` clean, no console errors.
+- Cost: one roll a bite, one pill while it rises, one bar on a tile rewritten on change. No timing needed.
+
+### Settled / open
+- **Settled (Axel, 2026-10-23):** bits, water food and treasures (the bottle, the copper pot, something to wear, the
+  pearl); a pop over the head with the item's small icon for every catch; the rod wears, in a system the other tools
+  can use later.
+- **Open:** old fish (tier 4) at all.
+- **Open:** the three bottle recipes, and the water food's dishes.
+- **Open:** whether a broken rod leaves a stick (my pick) or nothing.
+- **Open:** where this stage goes in the order; it leans on stage 12 only for the copper pot.
+
 ## After that (roughly in this order)
+**Next, as of 2026-10-22:** stage 12 (cooking by hand) comes before the visitors, the kitchen ladder and stage 11's bait:
+Axel wants the cooking itself, and the dishes, to be the heart before anything is built round them. Stage 13 (the legend)
+comes after stage 12.
+
 1. **Cooking at the fire** and 2. **hunger and eating**: stage 6 above.
 3. **Camp builds.** Arranged inside the camp ring: a seat log, a spit, a drying rack (keeping food for winter), a basket
    for storage (built 2026-10-17: `w.camp.basket`, the ring went from 3.2 to 5 tiles; 2026-10-19: it grew to 32 slots,

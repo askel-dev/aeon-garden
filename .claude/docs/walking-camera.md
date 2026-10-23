@@ -91,3 +91,8 @@ just nearer) its canvas would show it over them, so it's drawn in the meadow aga
 beat, till it has been clear of them for `SPLIT_CLEAR` (`splitBehind`). Left out while split: the lightning's shake, and
 the rain falls under the forager, not over it. To measure it on a phone: `?bench=walk&runs=nsns&run=0` from a server that
 takes the results' POST to `/result` (n without the split, s with it; each run 70 s, then the next opens by itself).
+
+Sent to a point that's clear but whose tile's middle is solid (just in front of a seat log, say), `foragerTo` walks to the
+tile beside and then straight on to the point itself (`pastRocks`), rather than stopping on that tile's middle. Each seat
+log is a capsule of its own in `pastRocks` and `outOfRocks` (`SEAT_SOLID` circles of `solidR` each, after `solidN`); till
+2026-10-23 they were all read as one, from the first log's end to the last one's, which made a wall between two logs.

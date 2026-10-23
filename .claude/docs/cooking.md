@@ -124,3 +124,95 @@ it's painted. Eating: a tap on food in the satchel (`eatAsk`, `#eat`) shows its 
 'starving'). The ideas card waits while it's at a fire (`askTick`).
 Its button by the satchel wears the craft button's plate (parchment, a line-drawn book, the word Recipes; round on a touch screen); while a page has news (`.new`) it takes the craft button's warm ready fill and bloom, with the "New" badge. The painted leather book (`bookIcon`) is only the cooking bar's now.
 The hands (2026-10-20, PLAN.md stage 9): a dish out of the pot goes into the forager's hand, not a satchel slot, if the hand is empty (`sim.js hand`, `holdDish`; a mess keeps its way, and with the hand full the dish goes where it did: satchel, basket, ground). It's carried out in front in both hands: a carry pose painted in fur.js for every view, stride and jog (`carryPose`, `carryArt`, kept after the emotes; one set of paintings whatever the dish, asked for only while the hand is full, `foragerAhead`, `keptPose`), its steps a little shorter (`CARRY_STRIDE`) and its bob halved so the dish rides steady, no idles while it holds one. The dish is its own painting from the sprite cache laid at the mittens (`drawHeldDish`, `dishAt`, `CARRY_SPOT` by view; from behind the body hides it). So it doesn't look pasted on (2026-10-21): it goes with the hands, moved by the pose's bob and lean (`CARRY_HOLD`, worked out once from fur.js `carryHold`) and laid as the figure is, squashed, shivering and tipped about the feet (`layHeld`, from what `drawFigure` keeps on `b.fs`, `b.fk`, `b.fr`), and sunk with it wading (`WADE_SINK`); the near mittens are painted again on their own over it (fur.js `MITT_ART`, one small painting: side on the near one, from the front both, on the bowl's sides, `CARRY_HANDS`); and it's painted finished as the forager is (`HELD_ARTS`, `paintHeldDish`: softer, muted a little, lit along its top and shaded underneath, the fur's grain and soft edge; the recipe book keeps the crisp `dish:` one). It rides on a little spring (`dishSpring`) that each foot down at a sprint knocks, so it bobs and tips; while there's some left to lose it slops a couple of drops (`slop`, `dropFly`: a ring of typed arrays, drawn over all that stands in `drawSpills`) and sloshes (sound.js `slosh`). The sim keeps how hot it still is and how much is left (sim.js `handHeat`, cold in a quarter day, not by a fire; `handFull`, `HAND_SLOP` a sprint tick down to `HAND_LEAST`): eaten it fills by what's left, and gone cold it no longer warms (`feedHand`). The steam over a warm one (`HAND_STEAM_ARTS`, painted once) fades with the heat. A stumble with it still hot (`HAND_HOT`) drops it (event `'spill'`; the forager stops): it tumbles ahead (`spills`, `SPILL_MS`), splashes, clatters (sound.js `spill`), lies tipped a moment and leaves a stain (`stainAt`, `drawStains`: one soft splash painted once, laid flat by the footprints, fading over `STAIN_MS` on their clock), and says so; friends see it fall (`'spill'` message). Without the carry painting (kneeling, a painting not in yet) the dish goes back to where the hand was (`HAND_UP`). A click on the forager (or H) opens the satchel's small Eat card over it (`eatAsk` with `HAND = -2`): Eat (sim.js `feedHand`), Put away into the satchel (`putHandAway`, flown to its tile; full says so), 🎁 Give and 🙏 Offer as the satchel's are (`giveSlot`, `offerSlot`, from the hand). In the cooking window the dish's reveal flies to the forager (`kw.reveal.hand`); a collapse loses the hand with the satchel (`wakeForager`), and playing together it goes in the `'pos'` message as a dish index so friends draw it too.
+The clay pot is a thing in the meadow (PLAN.md stage 12, steps 1 and 2, 2026-10-22: a placeholder look and feel, to be played
+and tuned; the comments over game.js `POT_JOBS` and sim.js `POT_EVERY` have it all). It's made as before (the clay pot's craft
+at a fire), and sits on that fire; from there it's carried in both hands (sim.js `f.hand` is `'pot'`, `takePot`; the carry pose
+as a dish's, the pot's painting by its water at `POT_HELD` a dish's size: `potLook`, `drawHeldDish`'s `big`). Lift in the
+cooking bar (`#cook-lift`, shown while the pot is on that fire with nothing cooking: `liftPot`), a tap on it where it stands
+(`potAt`, `useAt` kind `'pot'`, `goPot`), or a tap on a cold fire it sits on with nothing to do to the fire, picks it up.
+Carrying it (`potTap`, first in `click`): a tap on water walks to the bank or into the shallows (`scoopFrom`) and fills it
+a scoop at a time (`fillFrame`: `SCOOPS` of `SCOOP_MS`, a plop and a slosh each, the placeholder for a glug; sim.js
+`fillPot`, `POT_SCOOP` a third), a tap on a fire sets it on (`goPotFire`, sim.js `potOnFire`; E too, through `clickFire`),
+a tap on the forager or H sets it down a step ahead (`potDown`, sim.js `setPot`). Each is a job at a spot as the fire's are
+(`goFire` with its own `at`, kinds in `POT_JOBS`, the `'set'` kneel or the `'fill'` one: `potArrive`, `potSet`). Sprinting
+with it slops water out (drops of `WATER_RGB` and a slosh, from `slop`), a stumble splashes some (`'potslop'`). Off a fire
+it's one painting by how much water is in it (`POT_WATER`, 'vsl' parts `potF0` to `potF3`: dry, a third, two thirds, full,
+`potStep`), steaming while it's hot (`drawGroundPot`, in render's sorted loop; it has a `fire` field, so it's dispatched
+before the fires). Over a fire it's the cooking's own pot (`vesselOver`, `drawCookView`): `paintCookPot` paints its inside
+once a level (`kw.backs`, the water lower by `kw.wdy` till it's a crescent at the foot of the mouth, a sooty floor dry),
+and the water is drawn as hot as it is (`boilOf`: steaming, a simmer's few bubbles at the edge, a rolling boil's many and
+its face broken pale: `potBoil`; steam as hot as it is), and bubbles in the sound by the nearest one (`potSound`). The
+vessel row at a fire has the pot only while it's on that fire; elsewhere its tile says Away (`vesselMode` 'away', and
+picking it says to carry it here). Cook in the pot wants `POT_LEAST` water in it; the dish then counts down only while
+it simmers (the timer says "Coming to a simmer", `potWarming`), and taken out it was the water: the pot's dry. Its line
+(`potState`): on the fire's (`fireSaid`), under the mouse, and while carrying it what a tap would do (`potLine`).
+`garden.give('pot')` in dev puts one in its hands (made at the nearest fire if there's none). Friends don't see the pot
+move yet (no `'pot'` messages).
+sim.js: `w.pots` (in `LATER`; `potOf`, one shape: where, the fire it's on as an index, who holds it, water, heat, and the
+blanks for the steps to come: things, boiled, chopped, stirred, burnt, dish). A pot for each fire that made one
+(`potsOwed`, from `makeVessel`, `kitTick` and `unpackWorld`, so an old meadow gets its pot on that fire, empty; no
+`KEEP_VERSION` bump). `potsTick` every `POT_EVERY`: on a fire it warms toward `fireHeat` (a full pot in `POT_WARM`, 30 s at
+1x on a fed fire), off one it cools (`POT_COOL`); simmering it boils down (`POT_BOIL_OFF`, a rolling boil quickest), and dry
+with a dish in it it catches (`burnt`, event `'potcatch'`; empty, `'potdry'`). `cookOn` with `inPot` puts the dish in the
+pot (`dish`, `boiled` as hot as it was), `fireTick` counts it down only while it simmers (`potCooks`), `cookTake` empties
+the water. `potCarried` slops a sprint's share (`POT_SLOP`) and a stumble's (`POT_TRIP`); `potFalls` sets it down where
+the forager collapses, so it isn't lost with the satchel.
+The chopping block (PLAN.md stage 12, step 3, 2026-10-22: a placeholder look and feel, to be played; the comment over game.js
+`BLOCK_BUILD` and sim.js `BOARD_MOST` has it all). A camp build (recipes.js `BUILDS.block`: 4 sticks and a pebble), made from
+the make strip as the lean-to is (`placeBlock`, sim.js `blockSpot`, `makeBlock`; friends see it set down, `'block'`), a sawn
+round with a board and a flint knife on it (`paintBlock`, `BLOCK_ARTS`: with its board, without, the board alone). A tap on it
+kneels the forager there (`clickBlock`, goFire `'chop'`, the `'chop'` stage, `chopping()`); then a tap on a satchel tile lays
+that thing on the block (`chopLay`, sim.js `blockLay`: out of the satchel at once) and taps on the block, the forager, E or
+the space bar chop it (`chopTap`, sim.js `blockChop`, sound.js `chop` by the way it's got ready), as many taps as recipes.js
+`PREP` says by id or tag (`prepOf`: torn greens 3, crushed garlic 2, chopped nettles 4, sliced mushrooms 4, halved fruit 2,
+cracked nuts 3; a fish or honey goes in whole). Done, it's on the board (the block's own `bag`/`bagN`, `BOARD_MOST` things, not
+in `worldStores`), drawn as a few smaller copies of its satchel painting (`drawPieces`). With nothing on the block a tap lifts
+the board into both hands (`liftBoard`, sim.js `takeBoard`, `f.hand` `'board'`, carried as a dish is: `boardLook`); a tap on the
+fire the pot's on carries it there and tips its things into the pot's rings (`goBoardFire`, goFire `'cook'` with `tip`,
+`tipBoard`), the board back on the block. They're held back on the board till Cook as the basket's are (`potHeld`, `spendPot`),
+so stepping away leaves them there. A tap on the block carrying it puts it back; a fall puts it back too (sim.js `boardBack`).
+What came off the board is the dish's `chopped` (cookStart, sim.js `cookOn`), for the grade in step 4. `garden.give('block')` in
+dev sets one down in camp. Not done: a painting per cut, the knife moving, friends seeing what's chopped, the board's things
+drawn while it's carried.
+
+The board at the fire (PLAN.md stage 12, step 3 as it came back from `cooking-lab.html`, 2026-10-22; the comment over game.js
+`BOARD_EMPTY` has it all). board.js is the cutting, shared with the lab (tune the feel there): a swipe cuts like Fruit Ninja, a
+slow drag from a piece sweeps it, only a sweep takes a piece off the open right edge. In the game it's a scene of its own over
+the whole screen, as in the lab (`#boarding`, over the HUD): cooking with the pot, a tap on a satchel or basket thing that wants
+getting ready (recipes.js `prepOf`; `boardFor`) lays it on the board (`boardLay`) and the camera goes down onto it (`boardUp`, below): the board
+on the camp's grass (board.js `paintBoard` on `paintGround`, one picture a screen size: `boardLayout`, the lab's layout), a
+parchment strip at the foot of what else can go on it with how many are left (`boardStrip`: the satchel's, then the basket's),
+a note up top that fades (`BOARD_NOTE_MS`), and the brass arrow on the pot's side back to it with the pot's count (`#board-back`).
+The meadow isn't drawn while it's covered (`boardHides`). A slow drag from the board's back edge scrapes all of it at once (board.js `scrape`, `SCRAPE`; 2026-10-22, Axel wanted an easier way to sweep everything in). A piece swept off the edge goes into the pot (`boardOff`: the thing's
+first piece takes it a ring, `j.cut` keeps its record) and is tossed on out of sight toward it (`boardToss`); once the board's
+empty the camera goes back out by itself (`BOARD_EMPTY`), or by the arrow, Esc or Back (`boardShut`), and what went in flies
+back in from that edge, one after another, each a picture of its own pieces painted once (`Board.picture`), in an arc down into
+the pot (`brd.fly`, aimed where the camera has the pot each frame), falling in as a tapped thing does (`j.land`); in the pot
+it's drawn where its satchel painting would be (and again while it cooks: `cutPics`).
+
+The board is a thing in the meadow too (2026-10-22, Axel: the board had no link to the world; he wanted the camera to move in
+and the things to fly into the pot). It's the camp's own, made at the make strip (2026-10-22, Axel: a kitchen board didn't
+fit a camp in the wild; the player picks one of the two): a **cutting log** split from 6 sticks till there are logs and an axe
+(recipes.js `BUILDS.cutlog`) or a **cutting stone**, a flat stone from the shore (`BUILDS.cutstone`; `slab`, a ground find
+like pebbles, `place: 'stony'`, rare: `most: 2`). Either is sim.js `w.camp.block` with `kind` `'log'` or `'stone'` (one a camp,
+a chopping block kept from before is a log), set down close by the camp's fire (`blockSpot`, `BLOCK_NEAR`; the ghost starts at
+`cutSpot`, by the seat log's side of the fire). board.js paints both (`paintLog`, `paintStone`, tried in `board-lab.html`: split
+fibre, bark along its sides, end grain; lichen, soot on the fire's side); in the meadow `drawCutter` draws it small and squashed
+(`paintBlock` 3 and 4, `CUT_TILES` wide), mirrored right of the fire so its open end faces it. Cooking with the pot at a fire
+it's close to (`cutterAt`), a tap on a thing that wants getting ready opens the scene on it; with none it goes in whole and
+`boardNone` says once what would cut it. While the scene's on it the meadow draws it
+(`drawBoardDown`, after `drawStains`: its picture painted once a size from the board's own and what's on it, `boardSmall`,
+squashed by `BOARD_FLAT` to lie flat). Then the camera goes down onto it (`'in'`): a match cut. The meadow's canvases are made
+bigger by the browser (CSS `scale` and `transform-origin`, `boardMeadow`: nothing's drawn again, so it's cheap and stretched
+only on the way) about the one point that takes the board on the grass to the board on screen (`boardDown`); the board's
+scene is drawn over it at the same place, as big and turned up as flat as it's got, fading in over the meadow's own in the
+first `BOARD_SWAP` (so the meadow's dark and fog don't make it jump), and the grass fades in for the last of the way, when the
+meadow stops being drawn. The board's open edge faces the pot: lying right of the fire the whole scene is mirrored
+(`brd.flip`: drawn and read so, the arrow on the left; board.js turns its "3 cuts!" back round). Going out (`'out'`) the
+camera rises the same way and leans over to the pot, the board shrinks back onto the grass, and the pot's rings and bar come
+back at the end (`boardRest`). A tap while it moves gets it there at once (`brd.skip`). The board stays on the grass, with
+what's left on it, till the forager leaves the fire or Cook (`boardReset`). Not done: the scene isn't darkened at night; on an
+upright phone the scene's log is fatter (`CUT_TALL`) than the one on the grass, so it changes a little as the camera arrives.
+Dragged onto the pot a thing still goes in whole. How many pieces a thing was cut into against `prepOf`'s cuts is the dish's
+`chopped` (`choppedOf`, sim.js `cookOn`), for step 4's grade. The satchel's head says "click to cut, drag into the pot" (`bagWord`).
+The chopping block build is `gone` (one already made becomes a cutting log).

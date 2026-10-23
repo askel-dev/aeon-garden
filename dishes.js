@@ -317,8 +317,11 @@ const LENTICELS = [[0.1, -0.44, -0.3, 0.016], [0.13, 0.04, 0.12, 0.012], [0.14, 
   [0.3, -0.14, -0.04, 0.012], [0.33, -0.44, -0.4, 0.01], [0.41, -0.46, -0.3, 0.02], [0.47, 0.06, 0.16, 0.012], [0.49, 0.2, 0.34, 0.016],
   [0.57, -0.32, -0.24, 0.012], [0.63, 0.32, 0.42, 0.014], [0.66, -0.12, -0.02, 0.01], [0.74, -0.04, 0.16, 0.018],
   [0.82, -0.42, -0.26, 0.016], [0.88, 0.14, 0.26, 0.012], [0.9, 0.3, 0.38, 0.01]];
-function paintRosehipTea(g) {
-  const ty = -0.3, by = 0.6, TX = 0.52, BX = 0.44, TRY = 0.15, BRY = 0.12;   // the cup: its mouth and its foot
+// The birch-bark cup (the rosehip tea's, the mint tea's), with the drink painted by inTea(ty, TX, TRY) held in its mouth:
+// the mouth centred at (0, ty), TX by TRY. What lies at its foot is the dish's own.
+const BARK_CUP = { ty: -0.3, by: 0.6, TX: 0.52, TRY: 0.15 };
+function barkCup(g, inTea) {
+  const { ty, by, TX, TRY } = BARK_CUP, BX = 0.44, BRY = 0.12;   // the cup: its mouth and its foot
   const wAt = t => TX + (BX - TX) * t, yAt = t => ty + (by - ty) * t, ryAt = t => TRY + (BRY - TRY) * t;
   sitShadow(g, 0.06, by + 0.06, 0.66, 0.13, 0.32);
   // The handle: a strip of bark looped out on the right (behind the cup where it's tucked in).
@@ -364,15 +367,7 @@ function paintRosehipTea(g) {
   const mouth = () => ovalAt(g, 0, ty, TX, TRY);
   softIn(g, BARK_IN, ty - TRY, ty + TRY, mouth, 1.05, 0.7);
   g.save(); g.beginPath(); mouth(); g.clip();
-  const tea = () => ovalAt(g, 0, ty + 0.045, TX - 0.04, TRY - 0.025);
-  fillIn(g, rgba(tone(TEA, 0.74)), tea);
-  furGlow(g, [236, 104, 60], 0.8, -0.08, ty + 0.055, 0.42, 0.085, 0, 0.2);                   // ruby, lighter where it's shallow
-  strokeIn(g, 'rgba(240, 150, 100, 0.65)', 0.016, () => g.ellipse(0, ty + 0.045, TX - 0.05, TRY - 0.032, 0, Math.PI + 0.2, TAU - 0.2));   // its edge against the cup
-  furGlow(g, [255, 236, 220], 0.55, -0.22, ty + 0.02, 0.16, 0.03, -0.08);                    // the sky in it
-  hipAt(g, 0.2, ty + 0.06, 0.13, 0.5, false);
-  hipAt(g, 0.02, ty + 0.09, 0.11, -2.6, false);
-  strokeIn(g, 'rgba(255, 190, 160, 0.5)', 0.008, () => { ovalAt(g, 0.2, ty + 0.075, 0.09, 0.022); ovalAt(g, 0.02, ty + 0.1, 0.075, 0.018); });   // the ripples round them
-  furGlow(g, [60, 20, 12], 0.4, 0, ty + 0.13, TX * 0.9, 0.04);                                // shaded under the front of the rim
+  inTea(ty, TX, TRY);
   g.restore();
   // The rim: rolled bark, bound round with a root.
   strokeIn(g, rgba(BARK), 0.05, () => g.ellipse(0, ty, TX, TRY, 0, 0, TAU));
@@ -382,6 +377,20 @@ function paintRosehipTea(g) {
     for (let i = 1; i < 10; i++) { const a = i / 10 * Math.PI, x = Math.cos(a) * (TX - 0.005), y = ty + 0.05 + Math.sin(a) * TRY; g.moveTo(x - 0.02, y - 0.02); g.lineTo(x + 0.02, y + 0.024); }
   });
   strokeIn(g, 'rgba(220, 180, 130, 0.7)', 0.008, () => g.ellipse(0, ty + 0.042, TX - 0.01, TRY, 0, 0.5, 1.6));
+}
+function paintRosehipTea(g) {
+  const { by } = BARK_CUP;
+  barkCup(g, (ty, TX, TRY) => {
+    const tea = () => ovalAt(g, 0, ty + 0.045, TX - 0.04, TRY - 0.025);
+    fillIn(g, rgba(tone(TEA, 0.74)), tea);
+    furGlow(g, [236, 104, 60], 0.8, -0.08, ty + 0.055, 0.42, 0.085, 0, 0.2);                   // ruby, lighter where it's shallow
+    strokeIn(g, 'rgba(240, 150, 100, 0.65)', 0.016, () => g.ellipse(0, ty + 0.045, TX - 0.05, TRY - 0.032, 0, Math.PI + 0.2, TAU - 0.2));   // its edge against the cup
+    furGlow(g, [255, 236, 220], 0.55, -0.22, ty + 0.02, 0.16, 0.03, -0.08);                    // the sky in it
+    hipAt(g, 0.2, ty + 0.06, 0.13, 0.5, false);
+    hipAt(g, 0.02, ty + 0.09, 0.11, -2.6, false);
+    strokeIn(g, 'rgba(255, 190, 160, 0.5)', 0.008, () => { ovalAt(g, 0.2, ty + 0.075, 0.09, 0.022); ovalAt(g, 0.02, ty + 0.1, 0.075, 0.018); });   // the ripples round them
+    furGlow(g, [60, 20, 12], 0.4, 0, ty + 0.13, TX * 0.9, 0.04);                                // shaded under the front of the rim
+  });
   // Two more hips lying at its foot.
   hipAt(g, -0.6, by + 0.04, 0.24, -0.3);
   hipAt(g, -0.32, by + 0.14, 0.26, 0.2);
@@ -2293,6 +2302,303 @@ function paintDriedFishHazel(g) {
   });
 }
 
+// ------------------------------------------------------------------ shellfish and mint (the fishing's shared pieces)
+//
+// An open mussel, a boiled crayfish and a sprig of water mint, as the dishes from the deep water all have them.
+const MUSSEL_SHELL = [40, 48, 72], MUSSEL_NACRE = [200, 210, 226], MUSSEL_FLESH = [238, 150, 78], MUSSEL_CREAM = [250, 210, 150];
+const CRAY_RED = [214, 62, 34], CRAY_DARK = [128, 30, 18];
+const WMINT = [92, 156, 72];
+// A mussel's valve along +x from its hinge (0, 0) to its round end near (1, 0), about 0.4 wide.
+function musselValvePath(g) {
+  g.moveTo(0, 0);
+  g.bezierCurveTo(0.12, -0.26, 0.72, -0.34, 0.96, -0.12);
+  g.bezierCurveTo(1.06, -0.02, 1.0, 0.16, 0.8, 0.2);
+  g.bezierCurveTo(0.5, 0.25, 0.14, 0.14, 0, 0);
+  g.closePath();
+}
+// A mussel sprung open at (x, y), its hinge there, s long, turned by rot: the back valve up behind, blue-black and glossy,
+// the front one lying open, its pearly inside round a plump orange-cream mussel.
+function musselAt(g, x, y, s, rot) {
+  g.save(); g.translate(x, y); g.rotate(rot); g.scale(s, s);
+  furGlow(g, [30, 18, 8], 0.45, 0.5, 0.16, 0.56, 0.18);                                       // where it lies
+  // The back valve, tipped up behind: its outside, dark and glossy, lines of growth round it.
+  g.save(); g.rotate(-0.62); g.scale(1, 0.8);
+  softIn(g, MUSSEL_SHELL, -0.3, 0.22, () => musselValvePath(g), 1.5, 0.6);
+  g.save(); g.beginPath(); musselValvePath(g); g.clip();
+  furGlow(g, [120, 110, 150], 0.4, 0.5, -0.12, 0.34, 0.08, -0.1);
+  strokeIn(g, rgba(tone(MUSSEL_SHELL, 1.6, 20), 0.4), 0.018, () => { g.moveTo(0.3, -0.2); g.quadraticCurveTo(0.7, -0.26, 0.9, 0.06); g.moveTo(0.42, -0.08); g.quadraticCurveTo(0.68, -0.14, 0.8, 0.08); });
+  g.restore();
+  strokeIn(g, 'rgba(236, 240, 255, 0.8)', 0.03, () => { g.moveTo(0.18, -0.16); g.quadraticCurveTo(0.5, -0.3, 0.8, -0.22); });
+  g.restore();
+  // The front valve, lying open: its dark lip, the pearly inside, the mussel in it.
+  softIn(g, tone(MUSSEL_SHELL, 0.9), -0.3, 0.25, () => musselValvePath(g), 1.3, 0.6);
+  g.save(); g.translate(0.08, 0.0); g.scale(0.88, 0.8);
+  softIn(g, MUSSEL_NACRE, -0.3, 0.25, () => musselValvePath(g), 1.1, 0.72);
+  g.save(); g.beginPath(); musselValvePath(g); g.clip();
+  furGlow(g, [150, 170, 200], 0.6, 0.62, 0.14, 0.4, 0.12);
+  g.restore();
+  g.restore();
+  const flesh = () => { g.moveTo(0.16, 0.0); g.bezierCurveTo(0.24, -0.18, 0.72, -0.22, 0.86, -0.06); g.bezierCurveTo(0.94, 0.06, 0.8, 0.16, 0.58, 0.16); g.bezierCurveTo(0.34, 0.16, 0.16, 0.1, 0.16, 0.0); g.closePath(); };
+  softIn(g, MUSSEL_FLESH, -0.19, 0.16, flesh, 1.25, 0.72);
+  g.save(); g.beginPath(); flesh(); g.clip();
+  furGlow(g, MUSSEL_CREAM, 0.8, 0.44, -0.06, 0.26, 0.07, -0.05);                               // plump and creamy on top
+  furGlow(g, [150, 70, 30], 0.5, 0.7, 0.12, 0.24, 0.07);
+  g.restore();
+  strokeIn(g, rgba([150, 80, 40], 0.7), 0.022, () => { g.moveTo(0.22, 0.06); g.bezierCurveTo(0.4, 0.15, 0.7, 0.14, 0.84, 0.02); });   // its frilled edge
+  fillIn(g, 'rgba(255, 250, 236, 0.9)', () => { ovalAt(g, 0.42, -0.1, 0.05, 0.022, -0.15); ovalAt(g, 0.66, -0.12, 0.022, 0.014); });
+  g.restore();
+}
+// A crayfish boiled red at (x, y), lying back up, head to the left, s long (claws to tail fan about 1.4 s), turned by rot:
+// the big claws reaching forward, the shell glossy, the tail in plates ending in a fan.
+const CRAY_PLATES = [[0.16, 0.13], [0.27, 0.125], [0.37, 0.115], [0.46, 0.1], [0.54, 0.085]];
+function crayfishAt(g, x, y, s, rot) {
+  g.save(); g.translate(x, y); g.rotate(rot); g.scale(s, s);
+  furGlow(g, [40, 14, 6], 0.45, 0.1, 0.12, 0.7, 0.18);                                         // where it lies
+  const lit = tone(CRAY_RED, 1.2, 20);
+  // The feelers, long and thin, swept back.
+  strokeIn(g, rgba(CRAY_DARK, 0.85), 0.018, () => { g.moveTo(-0.38, -0.04); g.bezierCurveTo(-0.6, -0.2, -0.5, -0.5, -0.1, -0.56); g.moveTo(-0.38, 0.04); g.bezierCurveTo(-0.62, 0.16, -0.58, 0.46, -0.2, 0.54); });
+  // The legs under its sides.
+  strokeIn(g, rgba(tone(CRAY_RED, 0.75)), 0.026, () => { for (let i = 0; i < 4; i++) { const lx = -0.24 + i * 0.07; g.moveTo(lx, -0.08); g.lineTo(lx + 0.04, -0.22); g.moveTo(lx, 0.08); g.lineTo(lx + 0.04, 0.22); } });
+  // The claws: an arm, then a big pincer, the upper one and the lower one.
+  for (const side of [-1, 1]) {
+    g.save(); g.scale(1, side);
+    strokeIn(g, rgba(tone(CRAY_RED, 0.62)), 0.07, () => { g.moveTo(-0.28, 0.08); g.quadraticCurveTo(-0.4, 0.24, -0.54, 0.24); });
+    strokeIn(g, rgba(CRAY_RED), 0.048, () => { g.moveTo(-0.28, 0.08); g.quadraticCurveTo(-0.4, 0.24, -0.54, 0.24); });
+    const claw = () => { g.moveTo(-0.5, 0.32); g.bezierCurveTo(-0.62, 0.42, -0.88, 0.36, -0.98, 0.2); g.quadraticCurveTo(-0.86, 0.22, -0.8, 0.18); g.quadraticCurveTo(-0.9, 0.1, -0.96, 0.06); g.bezierCurveTo(-0.82, 0.02, -0.6, 0.1, -0.5, 0.18); g.closePath(); };
+    softIn(g, CRAY_RED, side < 0 ? 0.1 : 0.1, 0.36, claw, side < 0 ? 1.3 : 1.05, side < 0 ? 0.8 : 0.6);
+    strokeIn(g, rgba(CRAY_DARK, 0.6), 0.014, claw);
+    if (side < 0) strokeIn(g, 'rgba(255, 236, 214, 0.75)', 0.02, () => { g.moveTo(-0.56, 0.2); g.quadraticCurveTo(-0.7, 0.17, -0.84, 0.13); });
+    g.restore();
+  }
+  // The tail, plate by plate from the back, then its fan.
+  const fan = () => { g.moveTo(0.58, -0.06); g.quadraticCurveTo(0.72, -0.16, 0.76, -0.12); g.quadraticCurveTo(0.8, 0, 0.76, 0.12); g.quadraticCurveTo(0.72, 0.16, 0.58, 0.06); g.closePath(); };
+  softIn(g, tone(CRAY_RED, 0.95), -0.16, 0.16, fan, 1.2, 0.6);
+  strokeIn(g, rgba(CRAY_DARK, 0.55), 0.012, () => { g.moveTo(0.6, 0); g.lineTo(0.76, 0); g.moveTo(0.6, -0.02); g.lineTo(0.74, -0.1); g.moveTo(0.6, 0.02); g.lineTo(0.74, 0.1); });
+  for (let i = CRAY_PLATES.length - 1; i >= 0; i--) {
+    const [px, h] = CRAY_PLATES[i], plate = () => { g.moveTo(px - 0.06, -h); g.quadraticCurveTo(px + 0.08, -h, px + 0.07, 0); g.quadraticCurveTo(px + 0.08, h, px - 0.06, h); g.closePath(); };
+    softIn(g, CRAY_RED, -h, h, plate, 1.3, 0.62);
+    strokeIn(g, rgba(CRAY_DARK, 0.5), 0.012, () => { g.moveTo(px + 0.06, -h * 0.9); g.quadraticCurveTo(px + 0.08, 0, px + 0.06, h * 0.9); });
+  }
+  // The head and its shell: a smooth oval drawn to a point in front.
+  const shell = () => { g.moveTo(-0.44, 0); g.bezierCurveTo(-0.36, -0.08, -0.3, -0.15, -0.12, -0.15); g.bezierCurveTo(0.06, -0.15, 0.14, -0.1, 0.14, 0); g.bezierCurveTo(0.14, 0.1, 0.06, 0.15, -0.12, 0.15); g.bezierCurveTo(-0.3, 0.15, -0.36, 0.08, -0.44, 0); g.closePath(); };
+  softIn(g, CRAY_RED, -0.15, 0.15, shell, 1.3, 0.6);
+  g.save(); g.beginPath(); shell(); g.clip();
+  furGlow(g, lit, 0.6, -0.16, -0.06, 0.18, 0.06);
+  furGlow(g, CRAY_DARK, 0.45, 0.02, 0.12, 0.2, 0.06);
+  g.restore();
+  strokeIn(g, rgba(CRAY_DARK, 0.5), 0.012, () => { g.moveTo(-0.06, -0.14); g.quadraticCurveTo(-0.1, 0, -0.06, 0.14); });   // where the head meets the back
+  fillIn(g, 'rgb(40, 16, 10)', () => { ovalAt(g, -0.38, -0.05, 0.022, 0.02); ovalAt(g, -0.38, 0.05, 0.022, 0.02); });   // its eyes
+  // Glossy: a line of light down its back and a few points.
+  strokeIn(g, 'rgba(255, 238, 220, 0.8)', 0.022, () => { g.moveTo(-0.3, -0.08); g.quadraticCurveTo(-0.1, -0.12, 0.08, -0.08); g.moveTo(0.18, -0.09); g.lineTo(0.48, -0.06); });
+  fillIn(g, 'rgba(255, 250, 240, 0.9)', () => { ovalAt(g, -0.2, -0.09, 0.02, 0.01); ovalAt(g, 0.3, -0.08, 0.014, 0.008); });
+  g.restore();
+}
+// A sprig of water mint along +x from its cut stem at (x, y), s long, turned by rot: a purplish stem, pairs of round toothed
+// leaves, crinkled, the small ones at the tip.
+const WMINT_PAIRS = [[0.18, 0.2, 0.1, 0.92], [0.46, 0.18, 0.09, 1.0], [0.7, 0.14, 0.075, 1.08]];
+function wmintLeafPath(g, l, w) {
+  g.moveTo(0, 0);
+  g.bezierCurveTo(l * 0.1, -w * 1.1, l * 0.8, -w * 1.0, l, 0);
+  g.bezierCurveTo(l * 0.8, w * 1.0, l * 0.1, w * 1.1, 0, 0);
+  g.closePath();
+}
+function wmintSprigAt(g, x, y, s, rot) {
+  g.save(); g.translate(x, y); g.rotate(rot); g.scale(s, s);
+  furGlow(g, [20, 34, 12], 0.35, 0.46, 0.08, 0.5, 0.14);
+  strokeIn(g, rgba([118, 84, 82]), 0.03, () => { g.moveTo(0, 0); g.quadraticCurveTo(0.4, 0.02, 0.86, -0.02); });
+  for (const [ux, l, w, k] of WMINT_PAIRS) for (const sd of [-1, 1]) {
+    const rgb = tone(WMINT, k * (sd < 0 ? 1.04 : 0.92));
+    g.save(); g.translate(ux, 0); g.rotate(sd * 0.85);
+    softIn(g, rgb, -w, w, () => wmintLeafPath(g, l, w), 1.3, 0.66);
+    strokeIn(g, rgba(tone(rgb, 0.55), 0.55), 0.01, () => wmintLeafPath(g, l, w));
+    strokeIn(g, rgba(tone(rgb, 1.4, 26), 0.7), w * 0.16, () => { g.moveTo(l * 0.05, 0); g.lineTo(l * 0.85, 0); });
+    strokeIn(g, rgba(tone(rgb, 1.3, 20), 0.4), w * 0.08, () => { for (const t of [0.35, 0.6]) { g.moveTo(l * t, 0); g.lineTo(l * (t + 0.15), -w * 0.6); g.moveTo(l * t, 0); g.lineTo(l * (t + 0.15), w * 0.6); } });
+    g.restore();
+  }
+  g.save(); g.translate(0.84, -0.02);                                                          // the bud of little leaves at the tip
+  softIn(g, tone(WMINT, 1.16, 10), -0.06, 0.06, () => wmintLeafPath(g, 0.12, 0.05), 1.3, 0.7);
+  g.restore();
+  g.restore();
+}
+
+// ------------------------------------------------------------------ mussels with wild garlic
+//
+// In the clay pan: mussels sprung open in the heat, blue-black, their orange-cream insides showing, on wild garlic leaves
+// wilted dark and glossy into a buttery golden juice. Slivers of garlic stalk, a curl of steam.
+const MUSSELG_JUICE = [196, 150, 70];
+// [x, y, s, rot], back to front.
+const MUSSELG_SHELLS = [[-0.58, -0.08, 0.42, -0.2], [0.04, -0.14, 0.42, 0.25], [0.38, -0.06, 0.4, -0.5], [-0.34, 0.06, 0.44, 0.15], [0.12, 0.08, 0.44, -0.15]];
+const MUSSELG_LEAVES = [[-0.66, 0.06, 0.46, 0.13, -0.3, 0.3, 0.7], [0.2, 0.0, 0.5, 0.13, -0.2, -0.3, 0.72], [-0.1, 0.12, 0.44, 0.13, 0.2, 0.4, 0.76], [0.6, 0.1, 0.36, 0.12, 2.9, 0.3, 0.74]];
+function paintMusselsGarlic(g) {
+  const { cy, IX, IY } = CLAY_PAN;
+  clayPan(g, () => {
+    softIn(g, MUSSELG_JUICE, cy - IY, cy + IY, () => ovalAt(g, 0, cy + 0.02, IX * 0.97, IY * 0.9), 1.3, 0.62);
+    furGlow(g, [255, 226, 150], 0.35, -0.24, cy - 0.02, 0.5, 0.14);
+    furGlow(g, [70, 40, 14], 0.5, 0.3, cy + 0.15, 0.5, 0.1);
+    for (const [x, y, len, w, rot, bend, k] of MUSSELG_LEAVES) leafAt(g, 'g', x, cy + y, len, w, rot, bend, k);
+    for (const [x, y, s, rot] of MUSSELG_SHELLS) musselAt(g, x, cy + y, s, rot);
+    leafAt(g, 'g', -0.14, cy + 0.2, 0.36, 0.1, -0.1, -0.4, 0.9);                               // one laid over the front
+    for (const [x, y, a] of [[-0.62, cy + 0.14, 0.4], [0.58, cy + 0.02, -0.6], [0.34, cy + 0.2, 1.1]]) {
+      fillIn(g, 'rgb(214, 168, 90)', () => ovalAt(g, x, y, 0.045, 0.022, a));
+      fillIn(g, 'rgb(246, 232, 196)', () => ovalAt(g, x - 0.005, y - 0.004, 0.032, 0.013, a));
+    }
+    fillIn(g, 'rgba(255, 244, 200, 0.85)', () => { ovalAt(g, -0.5, cy + 0.18, 0.02, 0.01); ovalAt(g, 0.5, cy + 0.14, 0.018, 0.009); });
+  });
+  strokeIn(g, 'rgba(255, 255, 250, 0.3)', 0.035, () => { g.moveTo(-0.16, -0.24); g.bezierCurveTo(-0.26, -0.42, -0.06, -0.52, -0.14, -0.72); g.moveTo(0.22, -0.22); g.bezierCurveTo(0.16, -0.38, 0.34, -0.46, 0.26, -0.66); });
+}
+
+// ------------------------------------------------------------------ crayfish boil
+//
+// In the clay bowl from the pot: crayfish boiled bright red heaped in a clear golden broth, one lying across the top with
+// its claws out over the rim, sprigs of water mint and torn greens among them. A wisp of steam.
+const CRAYB_BROTH = [196, 160, 86];
+function paintCrayfishBoil(g) {
+  const { cy, IX, IY } = CLAY_BOWL, sy = cy + 0.04;
+  clayBowl(g, () => {
+    fillIn(g, rgba(CRAYB_BROTH), () => ovalAt(g, 0, sy, IX - 0.03, IY - 0.03));
+    furGlow(g, [110, 80, 36], 0.5, 0.26, sy, 0.3, 0.1);
+    furGlow(g, [246, 222, 150], 0.6, -0.16, sy - 0.03, 0.4, 0.1);
+    furGlow(g, [70, 50, 24], 0.55, 0.1, sy + 0.12, IX * 0.8, 0.05);
+    fillIn(g, rgba([80, 120, 50], 0.85), () => { for (const [x, y, a] of [[-0.48, sy + 0.04, 0.4], [0.44, sy + 0.06, -0.6], [0.1, sy + 0.12, 1.1], [-0.16, sy + 0.12, -0.3]]) ovalAt(g, x, y, 0.04, 0.016, a); });   // torn greens
+    crayfishAt(g, 0.12, sy + 0.04, 0.6, 2.95);
+    wmintSprigAt(g, -0.58, sy + 0.04, 0.5, -0.4);
+    wmintSprigAt(g, 0.56, sy + 0.08, 0.44, -2.6);
+    strokeIn(g, 'rgba(255, 230, 160, 0.7)', 0.008, () => { for (const [x, y, r] of [[-0.3, sy + 0.12, 0.014], [0.32, sy + 0.12, 0.016], [0.52, sy - 0.04, 0.012]]) ovalAt(g, x, y, r, r * 0.6); });
+  });
+  crayfishAt(g, -0.02, cy - 0.12, 0.74, -0.1);                                                 // the big one across the top
+  strokeIn(g, 'rgba(255, 255, 250, 0.3)', 0.035, () => { g.moveTo(-0.3, -0.24); g.bezierCurveTo(-0.4, -0.42, -0.2, -0.52, -0.28, -0.72); g.moveTo(0.3, -0.26); g.bezierCurveTo(0.24, -0.4, 0.42, -0.48, 0.34, -0.68); });
+}
+
+// ------------------------------------------------------------------ trout with water mint
+//
+// A whole brown trout threaded on a green stick and roasted over the coals, as the roast fish's: browned and speckled, its
+// belly stuffed with water mint, the leaves spilling out along its belly, a sprig tucked under the gill. A curl of steam.
+// [along, across, turn, shade]: the leaves in the slit, back to front.
+const TROUTM_LEAVES = [[-0.2, 0.14, 1.9, 0.9], [-0.08, 0.16, 1.2, 1.0], [0.04, 0.16, 2.2, 0.95], [0.16, 0.14, 1.0, 1.05]];
+function paintTroutMint(g) {
+  const ax = -0.86, ay = 0.74, bx = 0.86, by = -0.64, rot = Math.atan2(by - ay, bx - ax);
+  sitShadow(g, 0.04, 0.72, 0.62, 0.11, 0.22);
+  greenStick(g, ax, ay, bx, by);
+  const cx = -0.02, cy = 0.04, c = Math.cos(rot), sn = Math.sin(rot);
+  const at = (u, v) => [cx + u * c - v * sn, cy + u * sn + v * c];                             // along the fish, and across it (down to its belly)
+  // The mint stuffed in its belly, spilling out under it.
+  for (const [u, v, s, r] of [[-0.2, 0.12, 0.3, 0.5], [0.12, 0.12, 0.28, 0.2]]) wmintSprigAt(g, ...at(u, v), s, rot + r);
+  cookedFishAt(g, cx, cy, 1.3, rot, FISHC_TROUT);
+  strokeIn(g, rgba([70, 40, 20], 0.7), 0.02, () => { g.moveTo(...at(-0.24, 0.13)); g.quadraticCurveTo(...at(-0.04, 0.17), ...at(0.2, 0.13)); });   // the slit it's stuffed through
+  for (const [u, v, rr, k] of TROUTM_LEAVES) {                                                  // the mint showing in the slit
+    const rgb = tone(WMINT, k);
+    g.save(); g.translate(...at(u, v)); g.rotate(rot + rr);
+    softIn(g, rgb, -0.06, 0.06, () => wmintLeafPath(g, 0.17, 0.065), 1.3, 0.68);
+    strokeIn(g, rgba(tone(rgb, 0.55), 0.6), 0.01, () => wmintLeafPath(g, 0.17, 0.065));
+    strokeIn(g, rgba(tone(rgb, 1.4, 26), 0.7), 0.012, () => { g.moveTo(0.01, 0); g.lineTo(0.15, 0); });
+    g.restore();
+  }
+  strokeIn(g, 'rgba(255, 255, 250, 0.3)', 0.035, () => { g.moveTo(-0.2, -0.24); g.bezierCurveTo(-0.3, -0.42, -0.1, -0.52, -0.18, -0.72); g.moveTo(0.12, -0.36); g.bezierCurveTo(0.06, -0.5, 0.24, -0.58, 0.16, -0.76); });
+}
+
+// ------------------------------------------------------------------ honeyed eel
+//
+// Thick rounds of eel threaded on a green stick and glazed with honey over the fire till sticky and black at the edges: dark
+// amber, glossy, the white flesh showing at each cut end, honey running off the lowest in a drip. A curl of steam.
+const HEEL_GLAZE = [150, 74, 16];
+function honeyEelAt(g, x, y, len, r, rot) {
+  eelPieceAt(g, x, y, len, r, rot);
+  g.save(); g.translate(x, y); g.rotate(rot);
+  const side = () => { g.moveTo(-len / 2 + r * 0.4, -r); g.lineTo(len / 2, -r); g.ellipse(len / 2, 0, r * 0.4, r, 0, -Math.PI / 2, Math.PI / 2); g.lineTo(-len / 2 + r * 0.4, r); g.closePath(); };
+  g.save(); g.beginPath(); side(); g.clip();
+  g.globalAlpha = 0.6; fillIn(g, rgba(HEEL_GLAZE), side); g.globalAlpha = 1;                   // the glaze over its skin
+  furGlow(g, [24, 10, 4], 0.6, len * 0.1, -r * 0.2, len * 0.08, r * 0.3, 0.4);                // a scorch across it
+  furGlow(g, [24, 10, 4], 0.75, len * 0.5, 0, r * 0.5, r * 1.1);                              // blackened at the far end
+  furGlow(g, [24, 10, 4], 0.55, 0, -r, len * 0.4, r * 0.3);                                   // and along the top where the flames licked
+  g.restore();
+  furGlow(g, [255, 180, 60], 0.35, -len * 0.05, -r * 0.4, len * 0.3, r * 0.3);
+  strokeIn(g, 'rgba(255, 236, 180, 0.85)', r * 0.16, () => { g.moveTo(-len * 0.3, -r * 0.6); g.quadraticCurveTo(0, -r * 0.78, len * 0.3, -r * 0.6); });   // sticky gloss
+  fillIn(g, 'rgba(255, 252, 236, 0.95)', () => { ovalAt(g, -len * 0.1, -r * 0.62, r * 0.12, r * 0.07); ovalAt(g, len * 0.3, -r * 0.2, r * 0.07, r * 0.05); });
+  const face = () => ovalAt(g, -len / 2, 0, r * 0.56, r);
+  g.save(); g.beginPath(); face(); g.clip();                                                  // the cut end, honey run over it
+  g.globalAlpha = 0.5; fillIn(g, rgba(HONEY), face); g.globalAlpha = 1;
+  furGlow(g, [90, 40, 10], 0.7, -len / 2 + r * 0.3, r * 0.5, r * 0.5, r * 0.7);
+  g.restore();
+  strokeIn(g, rgba(tone(HEEL_GLAZE, 0.45), 0.9), r * 0.1, face);                              // blackened round its edge
+  fillIn(g, 'rgba(255, 248, 220, 0.85)', () => ovalAt(g, -len / 2 - r * 0.16, -r * 0.45, r * 0.1, r * 0.16, 0.3));
+  g.restore();
+}
+function paintHoneyedEel(g) {
+  const ax = -0.86, ay = 0.74, bx = 0.86, by = -0.64, rot = Math.atan2(by - ay, bx - ax);
+  const at = t => [ax + (bx - ax) * t, ay + (by - ay) * t];
+  sitShadow(g, 0.04, 0.72, 0.62, 0.11, 0.22);
+  greenStick(g, ax, ay, bx, by);
+  const [jx0, jy0] = at(0.3), jx = jx0 + 0.08, jy = jy0 + 0.14;                               // honey running off the lowest
+  fillIn(g, rgba(tone(HONEY, 0.85), 0.92), () => { g.moveTo(jx - 0.022, jy - 0.06); g.quadraticCurveTo(jx - 0.02, jy + 0.06, jx - 0.03, jy + 0.12); g.arc(jx, jy + 0.12, 0.03, Math.PI, 0, true); g.quadraticCurveTo(jx + 0.02, jy + 0.06, jx + 0.022, jy - 0.06); g.closePath(); });
+  fillIn(g, 'rgba(255, 240, 200, 0.9)', () => ovalAt(g, jx - 0.01, jy + 0.11, 0.009, 0.014));
+  for (const [t, len, r, tw] of [[0.76, 0.3, 0.17, 0.12], [0.53, 0.34, 0.185, -0.1], [0.3, 0.32, 0.19, 0.08]]) honeyEelAt(g, ...at(t), len, r, rot + tw);
+  strokeIn(g, 'rgba(255, 255, 250, 0.3)', 0.035, () => { g.moveTo(-0.16, -0.26); g.bezierCurveTo(-0.26, -0.44, -0.06, -0.54, -0.14, -0.74); g.moveTo(0.18, -0.4); g.bezierCurveTo(0.12, -0.54, 0.3, -0.62, 0.22, -0.8); });
+}
+
+// ------------------------------------------------------------------ fisher's mussel broth
+//
+// In the clay bowl from the pot: a pale golden broth, beads of fat on it, open mussels sitting up in it blue-black with
+// their orange insides, a slice or two of mushroom and bright nettle tops. A wisp of steam.
+const MBROTH = [222, 196, 126];
+function paintMusselBroth(g) {
+  const { cy, IX, IY } = CLAY_BOWL, sy = cy + 0.04;
+  clayBowl(g, () => {
+    fillIn(g, rgba(MBROTH), () => ovalAt(g, 0, sy, IX - 0.03, IY - 0.03));
+    furGlow(g, [140, 110, 52], 0.5, 0.26, sy, 0.3, 0.1);
+    furGlow(g, [255, 240, 190], 0.6, -0.16, sy - 0.03, 0.4, 0.1);
+    furGlow(g, [80, 60, 28], 0.55, 0.1, sy + 0.12, IX * 0.8, 0.05);
+    strokeIn(g, 'rgba(255, 220, 120, 0.75)', 0.008, () => { for (const [x, y, r] of [[-0.06, sy - 0.1, 0.02], [0.3, sy - 0.08, 0.013], [-0.52, sy + 0.06, 0.016], [-0.3, sy + 0.1, 0.012], [0.46, sy + 0.1, 0.014]]) ovalAt(g, x, y, r, r * 0.6); });
+    furGlow(g, [255, 255, 240], 0.4, -0.34, sy - 0.07, 0.14, 0.025, -0.05);
+    halfShroomAt(g, 0.42, sy - 0.04, 0.36, 0.45, FRIED);
+    halfShroomAt(g, -0.48, sy + 0.02, 0.32, -0.5, FRIED);
+    musselAt(g, -0.34, sy - 0.1, 0.42, -0.1);
+    musselAt(g, 0.06, sy - 0.12, 0.42, 0.3);
+    musselAt(g, -0.12, sy + 0.04, 0.44, -0.25);
+    musselAt(g, 0.22, sy + 0.04, 0.4, 0.1);
+    nettleTopAt(g, -0.56, sy - 0.08, 0.72, -0.5);
+    nettleTopAt(g, 0.5, sy + 0.04, 0.66, -2.8);
+  });
+  strokeIn(g, 'rgba(255, 255, 250, 0.3)', 0.035, () => { g.moveTo(-0.16, -0.12); g.bezierCurveTo(-0.26, -0.32, -0.06, -0.42, -0.14, -0.64); g.moveTo(0.06, -0.14); g.bezierCurveTo(0, -0.3, 0.18, -0.38, 0.1, -0.58); });
+}
+
+// ------------------------------------------------------------------ mint tea with honey
+//
+// In the birch-bark cup, as the rosehip tea's: the tea a pale green-gold, lighter at the edge, the sky in it, a few mint
+// leaves floating and a sprig leaning in over the rim; honey running down the cup's side in a drip, a little wooden spoon of
+// honey at its foot, and a curl of steam.
+const MTEA = [178, 178, 92], MTEA_SPOON = [190, 140, 86];
+function paintMintTea(g) {
+  const { by } = BARK_CUP;
+  barkCup(g, (ty, TX, TRY) => {
+    const tea = () => ovalAt(g, 0, ty + 0.045, TX - 0.04, TRY - 0.025);
+    fillIn(g, rgba(tone(MTEA, 0.8)), tea);
+    furGlow(g, [226, 214, 130], 0.8, -0.08, ty + 0.055, 0.42, 0.085, 0, 0.2);                   // gold-green, lighter where it's shallow
+    strokeIn(g, 'rgba(236, 230, 160, 0.65)', 0.016, () => g.ellipse(0, ty + 0.045, TX - 0.05, TRY - 0.032, 0, Math.PI + 0.2, TAU - 0.2));
+    furGlow(g, [255, 252, 230], 0.55, -0.22, ty + 0.02, 0.16, 0.03, -0.08);                    // the sky in it
+    for (const [x, y, rr] of [[0.04, ty + 0.08, 0.4], [0.2, ty + 0.06, -2.6]]) {
+      g.save(); g.translate(x, y); g.rotate(rr); g.scale(1, 0.6);
+      softIn(g, WMINT, -0.05, 0.05, () => wmintLeafPath(g, 0.16, 0.06), 1.3, 0.7);
+      strokeIn(g, rgba(tone(WMINT, 1.4, 26), 0.7), 0.01, () => { g.moveTo(0.01, 0); g.lineTo(0.14, 0); });
+      g.restore();
+    }
+    furGlow(g, [60, 50, 12], 0.4, 0, ty + 0.13, TX * 0.9, 0.04);                                // shaded under the front of the rim
+  });
+  wmintSprigAt(g, -0.3, -0.36, 0.62, -1.2);                                                    // a sprig leaning in over the rim
+  // Honey running down the cup's side from the rim.
+  const hx = -0.36, hy = -0.2;
+  fillIn(g, rgba(HONEY, 0.92), () => { g.moveTo(hx - 0.04, hy); g.quadraticCurveTo(hx - 0.045, hy + 0.14, hx - 0.03, hy + 0.22); g.arc(hx - 0.005, hy + 0.22, 0.03, Math.PI, 0, true); g.quadraticCurveTo(hx + 0.03, hy + 0.1, hx + 0.03, hy); g.closePath(); });
+  fillIn(g, 'rgba(255, 244, 200, 0.9)', () => { ovalAt(g, hx - 0.018, hy + 0.21, 0.008, 0.014); ovalAt(g, hx - 0.02, hy + 0.06, 0.006, 0.02); });
+  // A little wooden spoon of honey at its foot.
+  const sx = -0.52, sy = by + 0.08;
+  furGlow(g, [60, 36, 16], 0.4, sx + 0.12, sy + 0.08, 0.32, 0.06);
+  strokeIn(g, rgba(tone(MTEA_SPOON, 0.7)), 0.07, () => { g.moveTo(sx + 0.1, sy + 0.02); g.lineTo(sx + 0.46, sy + 0.1); });
+  strokeIn(g, rgba(MTEA_SPOON), 0.048, () => { g.moveTo(sx + 0.1, sy + 0.02); g.lineTo(sx + 0.46, sy + 0.1); });
+  softIn(g, MTEA_SPOON, sy - 0.08, sy + 0.08, () => ovalAt(g, sx, sy, 0.14, 0.08, 0.15), 1.2, 0.65);
+  softIn(g, HONEY, sy - 0.05, sy + 0.05, () => ovalAt(g, sx - 0.005, sy - 0.006, 0.1, 0.052, 0.15), 1.25, 0.75);
+  fillIn(g, 'rgba(255, 246, 210, 0.9)', () => ovalAt(g, sx - 0.04, sy - 0.02, 0.03, 0.012, 0.15));
+  strokeIn(g, 'rgba(255, 255, 250, 0.3)', 0.035, () => { g.moveTo(0.04, -0.46); g.bezierCurveTo(-0.06, -0.62, 0.14, -0.7, 0.06, -0.86); g.moveTo(0.26, -0.44); g.bezierCurveTo(0.2, -0.56, 0.36, -0.64, 0.3, -0.8); });
+}
+
 const PAINTED = [
   ['Roast mushrooms', paintRoastMushrooms],
   ['Baked apple with honey', paintBakedApple],
@@ -2327,6 +2633,12 @@ const PAINTED = [
   ['Fish soup', paintFishSoup],
   ['Eel and mushroom stew', paintEelStew],
   ['Dried fish and hazelnuts', paintDriedFishHazel],
+  ['Mussels with wild garlic', paintMusselsGarlic],
+  ['Crayfish boil', paintCrayfishBoil],
+  ['Trout with water mint', paintTroutMint],
+  ['Honeyed eel', paintHoneyedEel],
+  ["Fisher's mussel broth", paintMusselBroth],
+  ['Mint tea with honey', paintMintTea],
 ];
 const NAMES = PAINTED.map(p => p[0]);
 function paint(g, size, U, n) {

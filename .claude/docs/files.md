@@ -112,6 +112,11 @@ picture and what goes in, `renderBook`; a few dishes `known` from the start, the
   `OPENROUTER_KEY`, never in the page; the score kept in a range by what was offered, `SCORES`; daily limits in stone.sql), or from
   stone.js's hand-written lines when that can't be reached (`?stone-offline` forces them). Its name (`Old Mossbottom`) is a
   placeholder, in stone.js, the function's `NAME` and index.html.
+- `updates.js`: the meadow's version (`Updates.VERSION`, `0.MINOR.PATCH`: MINOR a new thing to do, PATCH the same made better)
+  and `UPDATES`, a block an update (a push to main: changes made before it's committed add to the top block), newest first: its version, date, title and a few plain notes, one short sentence a change. game.js (what's new: `updatesTick`, `openUpdates`) keeps the version last shown in `aeon-garden-version` and, a few
+  seconds into a quiet moment, shows the card of every block newer than it (at most three; each shows its first three notes, the biggest, and "Show N more" opens the rest). Someone new only has the version
+  noted; someone who played before there were versions (a kept meadow, a first done) gets the blocks back to the last x.y.0 (`lately`). ••• › What's new
+  brings the card back. A bump with no new block shows nothing.
 - `trees.js`, `tree-worker.js`, `tree-lab.html`: the trees, painted in code. How they're painted, cached and
   drawn is in `.claude/rules/trees.md`, which loads when one of those files is opened.
 

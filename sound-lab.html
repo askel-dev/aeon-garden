@@ -222,6 +222,9 @@
     ['plopout', '💧', 'Out of the pot', 'one lifted back out, dripping'],
     ['simmer', '♨️', 'The pot boiling', 'a few seconds of it bubbling hard (the Pot slider plays it as the game does)'],
     ['stir', '🥄', 'Stirring', 'the spoon going round: a swish of water, a soft knock on the iron'],
+    ['chop', '🔪', 'Chopping', 'the flint knife through a mushroom onto the block: a crisp cut and a knock'],
+    ['choptorn', '🌿', 'Tearing greens', 'on the block: a leafy rip and a soft pat'],
+    ['chopcrushed', '🧄', 'Crushing garlic', 'under the flat of the knife: a dull thump and a crunch'],
     ['dish', '🍲', 'A dish done', 'steam off it and a warm little run up into a chord'],
     ['pages', '📖', 'Recipe book opens', 'the cover lifting and a few pages riffling over'],
     ['hearth', '🍲', 'Cooking window opens', 'the pot set down on the stones, the fire catching under it'],
@@ -238,7 +241,8 @@
     ['munchroof', '🛖', 'Under the lean-to', 'the same stew under its roof: close, a little dull'],
     ['munchfriend', '🧑‍🤝‍🧑', 'A friend eating', 'over there: softer, further'],
     ['mess', '💨', 'A forager\'s mess', 'a puff of smoke, a rattle and two low notes: a shrug'],
-    ['anglecast', '🎣', 'A cast', 'the rod swung, the line zinging out'],
+    ['anglecast', '🎣', 'A short cast', 'the rod swung, the line zinging out (a full charge: Drawing back)'],
+    ['anglecharge', '🪵', 'Drawing back', 'the cast charging: the ratchet quickening and the rod creaking, a taut twang at full, strained while held, then thrown hard'],
     ['anglefloat', '🔴', 'The float lands', 'a light plip on the water'],
     ['anglenibble', '💧', 'A nibble', 'a tick and a tiny plip: not the bite yet'],
     ['anglebite', '❗', 'The bite', 'the float pulled under: a deep gloop and two bright notes'],
@@ -246,6 +250,7 @@
     ['anglecreak', '〰️', 'The line taut', 'a creak as the fish pulls'],
     ['angleland', '🐟', 'Landed', 'a slap on the bank, flops, and a happy run up'],
     ['angleaway', '🌊', 'It got away', 'a splash and two soft notes falling'],
+    ['anglesnap', '🥢', 'The rod snapped', 'worn out: a dry crack, the line twanging slack, a creak and two notes falling'],
     ['stone', '🗿', 'The old stone answers', 'a knock of rock and a pompous hm-hm-hmm'],
     ['stonetalk', '🗿', 'The old stone babbles', 'a sentence in gravelly animalese, a blip a letter'],
     ['stonejoy', '🗿', 'The old stone, delighted', 'climbing up, swooning'],
@@ -356,6 +361,13 @@
     if (!b) return;
     if (b.dataset.play in WALKS) walk(b.dataset.play);
     else if (b.dataset.play === 'panting') pantRun();
+    else if (b.dataset.play === 'anglecharge') {
+      let at = 0, ms = 0;                              // (as game.js chargeFrame: 2.2 s to full, the ticks quickening, then held a while)
+      for (; ms < 2200; ms += 16) if (ms - at >= 95 * (1.5 - 0.8 * ms / 2200) || ms === 0) { at = ms; const v = ms / 2200; setTimeout(() => play('angle', { what: 'charge', v, pan: 0, label: 'drawing back' }), ms); }
+      setTimeout(() => play('angle', { what: 'full', pan: 0, label: 'full' }), 2200);
+      [2950, 3700].forEach(d => setTimeout(() => play('angle', { what: 'strain', pan: 0, label: 'held' }), d));
+      setTimeout(() => play('angle', { what: 'cast', v: 1, pan: 0, label: 'let go' }), 4100);
+    }
     else if (b.dataset.play === 'angleclick') for (let i = 0; i < 10; i++) setTimeout(() => play('angle', { what: 'click', v: 0.7 + 0.3 * Math.random(), pan: 0, label: 'the reel' }), i * 85);
     else if (b.dataset.play) play(...({
       splash: ['escape', { how: 'pond', label: 'splash' }],
@@ -368,7 +380,7 @@
       plopfish: ['plop', { what: 'fish', w: 1.7, label: 'a heavy plop' }],
       plophoney: ['plop', { what: 'sweet', w: 1.1, label: 'honey into the pot' }],
       plopout: ['plop', { what: 'out', label: 'one out of the pot' }],
-      anglecast: ['angle', { what: 'cast', label: 'a cast' }],
+      anglecast: ['angle', { what: 'cast', v: 0.3, label: 'a short cast' }],
       anglefloat: ['angle', { what: 'float', label: 'the float' }],
       anglenibble: ['angle', { what: 'nibble', label: 'a nibble' }],
       anglebite: ['angle', { what: 'bite', label: 'the bite' }],
@@ -376,7 +388,10 @@
       anglecreak: ['angle', { what: 'creak', label: 'the line taut' }],
       angleland: ['angle', { what: 'land', label: 'landed' }],
       angleaway: ['angle', { what: 'away', label: 'got away' }],
+      anglesnap: ['angle', { what: 'snap', label: 'snapped' }],
       simmer: ['simmer', { sec: 3, v: 1 }],
+      choptorn: ['chop', { way: 'torn', label: 'torn' }],
+      chopcrushed: ['chop', { way: 'crushed', label: 'crushed' }],
       munch: ['munch', { group: 'fruit', crisp: 0.8, n: 2, gap: 0.15, label: 'a crunch' }],
       munchtear: ['munch', { group: 'hand', crisp: 0, label: 'a tear and chews' }],
       munchsoft: ['munch', { group: 'spoon', crisp: 0, n: 3, label: 'off the spoon' }],
