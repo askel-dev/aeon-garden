@@ -2453,7 +2453,7 @@ function foragerFrame(now, d) {
   const want = FORAGER_ARTS[curl ? at + KNEEL_AT + KNEEL.sitWarm : emo >= 0 && stage < 4 ? Fur.emoteArt(fg.snowArt, fg.outfit, emo) : carried ? Fur.carryArt(fg.snowArt, fg.outfit, poseKey(fg.view, pose))
     : fishPose >= 0 ? Fur.fishArt(fg.snowArt, fg.outfit, fishVp(fg.view, fishPose)) : satView >= 0 ? satView
     : at + (kneel >= 0 && (sat || !sitting) ? KNEEL_AT + (satEat >= 0 ? satEat : kneel) : poseKey(sitting ? SEAT_VIEW[sf] : fg.view, sitting ? 0 : pose))];
-  fg.art = shownPose(f, want, px);
+  fg.art = shownPose(f, want, px, true);   // (waited for, it's painted next: furHas)
   if (fg.art === want) { fg.carryShown = carried; fg.carryVp = carried ? poseKey(fg.view, pose) : 0; }   // (its new painting not in yet: the dish stays where the old one held it)
   if (fg.art === want) { fg.fishShown = fishPose >= 0; fg.fishVp = fishPose >= 0 ? fishVp(fg.view, fishPose) : 0; }   // (and the rod where the old one held it)
   dishSpring(fg, ms);
@@ -3069,6 +3069,7 @@ function foragerAhead() {
   if (carry && !close) for (let v = 0; v < 3; v++) for (const p of set === 2 ? FORAGER_CHILLY : FORAGER_POSES) keepForager(FORAGER_ARTS[Fur.carryArt(fg.snowArt, fg.outfit, (v << 5) + p)], P);   // (a dish in its hands)
   if (carry || rod) keepForager(FORAGER_ARTS[Fur.MITT_ART], P);   // (and its mittens over it, or over the rod)
   if (rod) for (let vp = 0; vp < FISH_VPS; vp++) keepForager(FORAGER_ARTS[Fur.fishArt(fg.snowArt, fg.outfit, vp)], P);   // (the rod in its hands)
+  if (furWorker) furDrop();                             // (and what it no longer wants isn't painted ahead of what it does)
 }
 // Out while it snows, snow gathers on it (on the hood, the shoulders: fur.js FORAGER_SNOWS), less under the trees; once
 // it stops it melts off, soon above freezing, slowly under, quicker on the move, and by a fire close by it goes snowing or
@@ -16610,6 +16611,7 @@ if (window.Worker && window.OffscreenCanvas) {
       const { key, image } = e.data, job = furSent.get(key);
       furSent.delete(key);
       if (!image) { furWorker = null; return; }  // it can't paint there: they're painted here, as before
+      if (!job) { image.close(); return; }       // (taken back while it was being painted: furDrop)
       if (spriteCache.has(key)) { image.close(); return; }   // (painted here meanwhile)
       const bytes = image.width * image.height * 4;
       if (spriteCache.size > 2000 || spriteBytes + bytes > SPRITE_BYTES) dropSprites();
@@ -16621,24 +16623,41 @@ if (window.Worker && window.OffscreenCanvas) {
   } catch (e) { furWorker = null; }
 }
 // Whether this fox's or rabbit's sprite is there or can be made now from paintings that are; if not, the worker is
-// asked for the ones it's made from.
-function furReady(art, px) {
+// asked for the ones it's made from (now: to the front of its queue, for the pose a figure's waiting in, shownPose).
+function furReady(art, px, now) {
   if (spriteCache.has(px + '|' + art + '||')) return true;
   const P = furPainted(px), kind = furKind(art), n = +art.slice(kind.length + 1), white = kind === 'rabbit' ? (n >> 4) % 5 : 0;
-  if (white % 4 === 0) return furHas(art, P);
+  if (white % 4 === 0) return furHas(art, P, now);
   const brown = n - (white << 4), a = furHas(RABBIT_ARTS[brown], P), b = furHas(RABBIT_ARTS[brown + (4 << 4)], P);
   return a && b;
 }
 // A painting at P there, or asked for.
-function furHas(art, P) {
+function furHas(art, P, now) {
   const key = P + '|' + art + '||';
   if (spriteCache.has(key)) return true;
-  if (!furSent.has(key)) {
+  const job = furSent.get(key);
+  if (!job) {
     const kind = furKind(art);
-    furSent.set(key, { px: P, dpr, look: art + '||' });
+    furSent.set(key, { px: P, dpr, look: art + '||', now: !!now });
     furWorker.postMessage({ key, kind, n: +art.slice(kind.length + 1), px: P, dpr });
-  }
+    if (now) furWorker.postMessage({ bump: key });
+  } else if (now && !job.now) { job.now = true; furWorker.postMessage({ bump: key }); }
   return false;
+}
+// The forager's paintings asked for and not painted yet that neither it nor a friend wants now (foragerKeep, p.keep), taken
+// back from the worker's queue: zooming in to cook, its walk at the old size was still to paint ahead of its kneeling.
+// One drawn meanwhile is asked for again as it's drawn.
+function furDrop() {
+  const gone = [];
+  for (const [key, job] of furSent) {
+    if (job.now || !job.look.startsWith('forager:') || foragerKeep.has(key)) continue;
+    let kept = false;
+    for (const p of peers.values()) if (p.keep.has(key)) { kept = true; break; }
+    if (!kept) gone.push(key);
+  }
+  if (!gone.length) return;
+  for (const key of gone) furSent.delete(key);
+  furWorker.postMessage({ drop: gone });
 }
 // Each look of fox and rabbit about the screen (a fox's shade, how white a rabbit's coat has gone) is asked of the
 // worker before the first of it is on screen, so there's kin to stand in while its poses come (furKin); otherwise that
@@ -16721,11 +16740,12 @@ const walkerArt = (c, px, now) => c.species === 'fox' ? shownPose(c, foxArt(c, p
 // A pose not painted yet waits: the fox or rabbit holds the pose it was last
 // drawn in till the worker has painted it (it's not painted at any size yet), or without a worker, a frame longer
 // once the frame has done its painting (PAINT_MS). A crowd all setting off at once wanted a dozen in one frame.
+// The forager's and a friend's (now) go to the front of the worker's queue, so a figure never waits behind the dozens asked ahead.
 const poseShown = new WeakMap();                         // fox or rabbit: the painting it was last drawn in
-function shownPose(c, art, px) {
+function shownPose(c, art, px, now) {
   const was = poseShown.get(c);
   if (was !== undefined && was !== art && standIns && (furWorker
-    ? !furReady(art, poseStep(Math.max(4, px))) && !latestLook.has(art + '||')
+    ? !furReady(art, poseStep(Math.max(4, px)), now) && !latestLook.has(art + '||')
     : paintedMs > PAINT_MS && !spriteReady(art, px))) return was;
   poseShown.set(c, art);
   return art;
@@ -22053,6 +22073,7 @@ function peerItems(items, now, z) {
       p.sized = P; p.sizedSet = set; p.sizedSnow = p.snowArt; p.keep.clear(); p.sizedEmote = p.sizedFish = p.sizedCarry = p.sizedSit = -1;
       for (let v = 0; v < 3; v++) for (const q of set === 2 ? FORAGER_CHILLY : FORAGER_POSES) keepForager(FORAGER_ARTS[at + (v << 5) + q], P, p.keep);
       for (const q of Fur.FORAGER_IDLES) keepForager(FORAGER_ARTS[at + 96 + q], P, p.keep);
+      if (furWorker) furDrop();
     }
     if (p.emote >= 0 && p.sizedEmote !== P) { p.sizedEmote = P; for (const q of Fur.FORAGER_EMOTES) keepForager(FORAGER_ARTS[Fur.emoteArt(p.snowArt, p.outfit, q)], P, p.keep); }
     const fishPose = pose < 0 || p.rest && p.line.log ? anglePose(now, p.line, p.blinkAt) : p.rest && p.stage < 4 ? (now - p.blinkAt < 150 ? Fur.FORAGER_FISH.blink : Fur.FORAGER_FISH.hold) : -1;
@@ -22066,7 +22087,7 @@ function peerItems(items, now, z) {
       : fishPose >= 0 ? Fur.fishArt(p.snowArt, p.outfit, fvp)
       : psf && p.stage < 4 ? Fur.sitArt(p.snowArt, p.outfit, sitKind(psf, p.kneel === KNEEL.sitWarm))
       : at + (p.kneel >= 0 && p.stage < 4 ? KNEEL_AT + pose : poseKey(p.view, pose))];
-    p.art = shownPose(p, want, px);
+    p.art = shownPose(p, want, px, true);
     if (p.art === want) { p.carryShown = carried; p.carryVp = carried ? poseKey(p.view, pose) : 0; p.fishShown = fishPose >= 0; p.fishVp = fishPose >= 0 ? fvp : 0; }
     if (!carry) p.sizedCarry = -1;
     dishSpring(p, ms);

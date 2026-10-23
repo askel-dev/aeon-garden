@@ -19,6 +19,12 @@
 
 const UPDATES = [
   {
+    v: '0.12.2', date: '2026-10-23', title: 'Fixes',
+    notes: [
+      'Your forager kneels and stirs as soon as it starts cooking, and walks properly afterwards, instead of freezing in one pose.',
+    ],
+  },
+  {
     v: '0.12.1', date: '2026-10-23', title: 'Fixes',
     notes: [
       'Your forager, and friends, no longer get stuck in one pose while walking.',

@@ -8,13 +8,32 @@
  * them up there. Zooming in, which asks for new sizes, dropped a frame in fifteen; this way, one in a hundred.
  */
 importScripts('fur.js');
-onmessage = e => {
-  const { coats, winter, key, kind, n, px, dpr } = e.data;
-  if (coats) { Fur.setCoats(coats, winter); return; }
+// The jobs wait in a queue of their own, not the worker's message queue, so the page can take back the ones it no longer
+// wants ({ drop: [keys] }: the forager's walk at a size the camera has zoomed past) and send the one it's waiting on to the
+// front ({ bump: key }: the pose it's in now). Painted in the order they came, a forager zoomed in to cook knelt only
+// after every walking painting asked for at the old size, and on a phone it stood frozen for many seconds.
+const queue = [];
+let pumping = false;
+function paint({ key, kind, n, px, dpr }) {
   try {
     const size = Math.ceil(px * 1.3 * dpr), c = new OffscreenCanvas(size, size);
     Fur.painters[kind](c.getContext('2d', { willReadFrequently: true }), size, px * dpr, n);
     const image = c.transferToImageBitmap();
     postMessage({ key, image }, [image]);
   } catch (err) { postMessage({ key }); }
+}
+function pump() {
+  const job = queue.shift();
+  if (job) paint(job);
+  pumping = queue.length > 0;
+  if (pumping) setTimeout(pump, 0);                // (a new message, a drop or a bump, is read before the next one)
+}
+const at = key => { for (let i = 0; i < queue.length; i++) if (queue[i].key === key) return i; return -1; };
+onmessage = e => {
+  const { coats, winter, drop, bump } = e.data;
+  if (coats) { Fur.setCoats(coats, winter); return; }
+  if (drop) { const gone = new Set(drop); for (let i = queue.length - 1; i >= 0; i--) if (gone.has(queue[i].key)) queue.splice(i, 1); return; }
+  if (bump) { const i = at(bump); if (i > 0) queue.unshift(queue.splice(i, 1)[0]); return; }
+  queue.push(e.data);
+  if (!pumping) { pumping = true; setTimeout(pump, 0); }
 };
