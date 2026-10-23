@@ -4381,12 +4381,20 @@ function whatSet(name, detail, key) {
   if (on !== whatUi.on) { whatEl.classList.toggle('on', on); whatUi.on = on; }
 }
 function whatOff() { whatSet('', '', ''); }
+// A dish in its hand isn't in the satchel, so with nothing else named the line says where it is and what a tap on the
+// forager (or H) opens for it (eatAsk HAND: Eat, Put away). False with no dish there.
+function handSay() {
+  const h = world.forager.hand;
+  if (!h || h === 'pot' || h === 'board') return false;
+  whatSet(h, `in your hands · ${tapWord()} yourself`, keyboardy.matches && !fingerTap ? 'H' : '');
+  return true;
+}
 function hoverSay(now) {
   if (!world || promptsOff() || drag) { whatOff(); return; }
   let name = '', detail = '', it = null;
   const t = eTarget(), key = keyboardy.matches && !fingerTap ? 'E' : '';
   if (aim.close) {                                       // (a finger standing still: the nearest pick too, which its ring doesn't name)
-    if (now - aim.closeT0 > USE_SAY + USE_FADE) { whatOff(); return; }
+    if (now - aim.closeT0 > USE_SAY + USE_FADE) { if (!handSay()) whatOff(); return; }
     if (aim.torch && !ui.fire) { [name, detail] = torchSaid(aim.torch); it = aim.torch; }
     else if (aim.basket && !aim.basket.stone && !ui.fire) { [name, detail] = basketSaid(aim.basket); it = aim.basket; }
     else if (aim.seat && !ui.fire) { name = 'Seat log'; detail = fireSit.seat === aim.seat ? 'sitting' : 'sit down'; it = aim.seat; }
@@ -4427,6 +4435,7 @@ function hoverSay(now) {
     const s = potLine();
     if (s) { whatSet(s[0], s[1], ''); return; }
   }
+  if (!name && handSay()) return;
   if (!name) {                                           // (nothing named: what fishing there is here)
     const s = fishSaid();
     if (s) whatSet(s[0], s[1], key && s[2]); else whatOff();
@@ -9284,7 +9293,13 @@ function flyMoves(from, to, run) {
 function larderAll() {
   const B = larderStore(), f = world.forager;
   if (!B) return;
-  const any = f.bag.some(Boolean), n = flyMoves('bag', 'larder', () => S.putAway(world, B));
+  const dish = f.hand && f.hand !== 'pot' && f.hand !== 'board' && !fg.meal ? f.hand : '';   // (a dish in its hand goes in too: it's carried, not in the satchel)
+  const any = f.bag.some(Boolean) || !!dish, n = flyMoves('bag', 'larder', () => {
+    const m = S.putAway(world, B);
+    if (!dish || S.storeRoom(B, dish) < 1) return m;
+    S.storePut(B, dish, 1); S.dropHand(world);
+    return m + 1;
+  });
   if (n) chime('pick', { n: Math.min(n, 4) });
   else say(any ? `The ${larderName(B).toLowerCase()}'s full` : 'Nothing in the satchel', B.x, B.y - 0.6);
   renderSatchel();
@@ -14372,9 +14387,17 @@ const itemBg = id => { const i = ITEM_IDS.indexOf(id); return `${ITEM_IDS.length
 // One slot of the satchel is always in its hands, as a hotbar's is (ui.held, ringed in brass: .sel): picked by a tap on it or
 // its number key (1 to S.SLOTS), and kept on this device. What's in it is what it holds: the rod in it, it fishes (holdsRod),
 // and shows it, held out standing and over its shoulder walking (drawRodWalk); anything else it holds out in both mittens
-// (heldItem, itemLookOf). An empty slot is empty hands. Friends see what's in it (sendPos: hi).
+// (heldItem, itemLookOf). An empty slot is empty hands. Friends see what's in it (sendPos: hi). A dish in its hand (sim.js
+// hand) is held out over whatever the slot has, till it's put away: a slot picked by hand does that first (pickSlot).
 const HELD_KEY = 'aeon-garden-held';
 try { const k = +localStorage.getItem(HELD_KEY); if (k > 0 && k < S.SLOTS) ui.held = k; } catch (e) { /* fine */ }
+// A slot picked by hand (a tap on it, its number key) with a dish in its hand: the dish goes into the satchel first, so
+// what's picked is what it holds (with the satchel full it says so, and keeps the dish).
+function pickSlot(k) {
+  const h = world.forager.hand;
+  if (h && h !== 'pot' && h !== 'board' && !fg.meal) putHandAway();
+  holdSlot(k);
+}
 function holdSlot(k) {
   if (!(k >= 0 && k < S.SLOTS) || k === ui.held) return;
   ui.held = k;
@@ -14504,7 +14527,7 @@ function setupSatchel() {
       if (cooking()) { potAdd(h.k); return; }
       if (chopping()) { chopLay(h.k, row.children[h.k]); return; }   // (kneeling at the chopping block: onto it)
       if (larderOpen()) { putSlot(h.k); return; }        // (the basket open: into it)
-      holdSlot(h.k);                                       // (in its hands now, and its Eat or name as before)
+      pickSlot(h.k);                                       // (in its hands now, and its Eat or name as before)
       if (Recipes.foodOf(h.id)?.fill > 0 || giftFriend() || stoneOpen()) { eatAsk(eatUi.k === h.k ? -1 : h.k); return; }   // (or, a friend by, to give it; by the old stone, to offer it)
       if (h.touch) { const el = row.children[h.k]; el.classList.add('named'); clearTimeout(el.unname); el.unname = setTimeout(() => el.classList.remove('named'), 1400); }
       return;
@@ -14547,7 +14570,7 @@ function setupSatchel() {
   row.addEventListener('pointercancel', letGo);
   row.addEventListener('click', e => {                   // (an empty slot: empty hands, unless the tap's for the pot, the block or the basket)
     const el = e.target.closest('.slot');
-    if (el && !world.forager.bag[+el.dataset.k] && !cooking() && !chopping() && !larderOpen()) holdSlot(+el.dataset.k);
+    if (el && !world.forager.bag[+el.dataset.k] && !cooking() && !chopping() && !larderOpen()) pickSlot(+el.dataset.k);
   });
 }
 
@@ -23374,7 +23397,7 @@ document.addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey || e.altKey) && /^[a-z]$/i.test(e.key)) return;   // ⌘C, Ctrl+Z…: the browser's
   if (KEY_DIRS[e.code]) { e.preventDefault(); keysHeld.add(e.code); return; }
   if (e.key === ' ') { e.preventDefault(); if (!e.repeat && chopping()) chopTap(); else if (!e.repeat && !fishKey(true)) jumpNow(); }   // (fishing: a strike, or held in the bar; at the chopping block, a chop)
-  else if (/^Digit[1-9]$/.test(e.code) && !e.repeat) holdSlot(+e.code[5] - 1);   // (the slot in its hands, as a hotbar's)
+  else if (/^Digit[1-9]$/.test(e.code) && !e.repeat) pickSlot(+e.code[5] - 1);   // (the slot in its hands, as a hotbar's)
   else if (e.key === 'p' || e.key === 'P') setSpeed(ui.speed ? 0 : 1);
   else if (e.key === 'Escape') stepOut();
   else if (e.key === 'Enter' && ui.place) { e.preventDefault(); placeHere(); }   // (picking a spot for a fire: where the faint one is)

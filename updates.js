@@ -19,6 +19,14 @@
 
 const UPDATES = [
   {
+    v: '0.12.3', date: '2026-10-23', title: 'Fixes',
+    notes: [
+      'A dish in your hands now says so over the satchel: tap yourself to eat it or put it away.',
+      'Picking a satchel slot while you hold a dish puts the dish away, so you hold what you picked.',
+      'Put all in at the basket takes the dish in your hands too.',
+    ],
+  },
+  {
     v: '0.12.2', date: '2026-10-23', title: 'Fixes',
     notes: [
       'Your forager kneels and stirs as soon as it starts cooking, and walks properly afterwards, instead of freezing in one pose.',
