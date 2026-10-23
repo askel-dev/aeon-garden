@@ -17,18 +17,17 @@ once a pick. Nothing personal: no room codes, friends' names or chat.
 - **How long people stay**: the day a meadow reaches, sent at dawn (day 3, a season, a year).
 - **Updates**: the version on every event; whether What's new gets opened.
 
-## Bringing it back into the game (built 2026-10-23, waiting on the deploy below)
+## Bringing it back into the game (built and deployed 2026-10-23)
 
 Built: the rarity chips, the dawn line, the autumn feast (Harvest fish, 2,000 fish: recipes.js
 `festival`, tune `of` once we see the numbers) and the week's best-loved, all on the book's Everyone page rather than a
-board at camp (a board in the meadow could come later). Not deployed yet:
+board at camp (a board in the meadow could come later). Deployed as below (the function first went up as `talley`;
+the game calls `tally`, and an `openssl rand -base64` password broke the connection string: use hex):
 
 1. In Umami's Supabase project: run `supabase/tally.sql` (a read-only role; put in a password of your own).
 2. In the game's project (cecvgnhq...): secrets `UMAMI_DB` (that role through the transaction pooler, port 6543, user
    `meadow_tally.<umami project ref>`) and `UMAMI_SITE` (the website id), then deploy `supabase/functions/tally`.
 
-Until then tally.js gets nothing and the game shows none of it (the Everyone tab stays hidden). The SQL was tried on a
-copy of Umami's tables (PGlite), not on the real database: the first call's log says if a column is named otherwise.
 
 
 These read numbers back through a Supabase Edge Function (like the stone's) holding an Umami API key as a secret,
