@@ -19,9 +19,20 @@ const params = new URLSearchParams(location.search);
 const DEV = params.has('dev') || ['localhost', '127.0.0.1', '::1'].includes(location.hostname);
 const DEV_CARRY = 999;                  // what one satchel slot holds in dev
 if (DEV) S.setStacks(id => Math.max(Recipes.stackOf(id), DEV_CARRY), Recipes.keepOf, Recipes.usesOf);
-// A moment in the game counted for the visitors' board (Umami, index.html): firsts, level-ups, deeds. Not in dev, and
-// nothing if the script never came (offline, blocked).
-const track = (name, data) => { if (!DEV) try { window.umami && umami.track(name, data); } catch (e) { /* fine */ } };
+// A moment in the game counted for the visitors' board (Umami, index.html): firsts, level-ups, deeds, dishes, fish,
+// collapses, days, how smooth it ran, errors. Each carries the version. Not in dev, and nothing if the script never came
+// (offline, blocked). Few of them: a visit, a day or a deed, never a pick (plans/stats/ideas.md).
+const track = (name, data) => { if (!DEV) try { window.umami && umami.track(name, { ...data, v: Updates.VERSION }); } catch (e) { /* fine */ } };
+// An error on a player's device: what and where, each once a visit and no more than ERRORS_SENT of them.
+const ERRORS_SENT = 5, errorsSent = new Set();
+function trackError(msg, at) {
+  msg = String(msg || '').slice(0, 120);
+  if (errorsSent.size >= ERRORS_SENT || errorsSent.has(msg)) return;
+  errorsSent.add(msg);
+  track('error', { msg, at: String(at || '').trim().replace(/^.*\//, '').replace(/\)$/, '').slice(0, 60) });   // (game.js:123:45)
+}
+addEventListener('error', e => trackError(e.message, e.filename && `${e.filename}:${e.lineno}:${e.colno}`));
+addEventListener('unhandledrejection', e => { const r = e.reason; trackError(r && r.message || r, r && r.stack && r.stack.split('\n')[1]); });
 const BENCH = params.has('bench');            // (the phone's worst case set up by itself and timed: benchStart; implies perf)
 const BENCH_PLAN = params.get('bench') || '';  // ('walk': an ordinary day instead, the forager walking and the camera after it)
 const PERF = params.has('perf') || BENCH;     // (a live readout of frame rate and cost, bottom left)
@@ -6593,7 +6604,7 @@ function strike() {
 function lineIn(why) {
   const A = angle, f = world && world.forager;
   if (!A.stage) return;
-  if (why === 'gone' && f) { say(haulOf(A.kind) ? 'It slipped off the hook' : 'It got away', A.x, A.y - 0.5); hear('angle', A.x, A.y, { what: 'away' }, true); A.perfectLast = false; }
+  if (why === 'gone' && f) { track('fish', { kind: A.kind, how: 'lost', lv: f.lv.fishing }); say(haulOf(A.kind) ? 'It slipped off the hook' : 'It got away', A.x, A.y - 0.5); hear('angle', A.x, A.y, { what: 'away' }, true); A.perfectLast = false; }
   else if (A.stage !== 'cast' && f) hear('plop', A.x, A.y, { what: 'out' }, true);
   A.stage = ''; A.kind = '';
   reelShow(false);
@@ -6670,6 +6681,7 @@ function landFish(now) {
   rodWear(T ? ROD_TREASURE : ROD_LAND);
   const R = A.reel, perfect = !h && !R.slipped, n = h ? h.n[0] + Math.floor(Math.random() * (h.n[1] - h.n[0] + 1)) : 1;
   A.perfectLast = perfect;
+  track('fish', { kind: id, how: T ? 'treasure' : h ? 'haul' : perfect ? 'perfect' : 'landed', lv: f.lv.fishing });
   S.gainSkill(world, f, 'fishing', T ? TREASURE_PRACTICE : h ? HAUL_PRACTICE : 1 + (perfect ? FISH_PERFECT_PRACTICE : 0));   // (sim.js SKILLS: a fish landed is practice, a perfect one more)
   const pearl = id === 'mussel' && f.lv.fishing >= TREASURE_FROM && !world.hauled.includes('pearl') && Math.random() < PEARL_ODDS;
   if (T && !world.hauled.includes(id)) world.hauled.push(id);
@@ -10548,6 +10560,7 @@ function cookDone(j, now) {
     renderSatchel();
   }
   chime('pick', { n: 2 });
+  track('cook', { dish: mess ? 'mess' : dish.name });
   if (!mess) { if (played === -1) played = 0; lastDish = dish.name; if (!knownDish(dish.name)) firstTime('dish:' + dish.name, 'new recipe', esc(dish.name), esc(dish.text || '')); }
   j.made = { name: dish.name, mess, at: now, until: now + (FIRE_COOK ? REVEAL_MS + 600 : MADE_MS) };   // (at the fire: named while it rises out, renderTimer)
   renderCook();
@@ -19267,6 +19280,7 @@ function levelUp(s, lv) {
 const canAnnounce = () => !document.hidden && world.forager.down < 0 && !wardrobeOpen() && !askOpen() && !updatesOpen() && !bookOpen() && !friendsOpen();
 
 // A few times a second: a new day's line at sunrise (S.phaseOf: a day starts there), and where we are as a meadow opens.
+const DAYS_SENT = [2, 3, 5, 8, 15, 29, 57, 113];   // a meadow reaching one of these days is counted (a season is 7 days)
 function daybreakTick(now) {
   const a = announcing, day = Math.floor(world.tick / S.TPD), last = a.day, ck = S.clock(world), name = S.SEASONS[ck.season].name;
   a.day = day;
@@ -19274,6 +19288,7 @@ function daybreakTick(now) {
     a.openAt = 0;
     if (canAnnounce()) announce('day', `<b class="fr">${name}, day ${ck.dayInSeason}</b><small>year ${ck.year}</small>`, SEASON_LINES[ck.season]);
   }
+  if (last >= 0 && day === last + 1 && DAYS_SENT.includes(day + 1)) track('day', { day: day + 1 });   // (how long a meadow is kept: the day it reached)
   if (last < 0 || day !== last + 1 || !canAnnounce()) return;   // (no line for days skipped: a meadow opened, a friend's)
   if (ck.dayInSeason > 1) { announce('day', `<b class="fr">${name}, day ${ck.dayInSeason}</b>`, morningWord()); return; }
   announce('season', `<b class="fr">${name}</b><small>year ${ck.year}</small>`, SEASON_LINES[ck.season]);
@@ -19375,11 +19390,14 @@ function handleEvent(e) {
     case 'season':
       chime('season', { season: e.season });
       break;
-    case 'collapse':
+    case 'collapse': {
+      const f = world.forager;
+      track('collapse', { why: f.warmth <= 0 ? 'cold' : f.tummy <= 0 ? 'hunger' : 'cold', wet: f.wet > 0.5, weather: world.weather.kind, season: S.SEASONS[S.clock(world).season].name, day: Math.floor(world.tick / S.TPD) + 1 });
       fg.downAt = performance.now();
       ui.fire = null; ui.place = null; renderBuild();       // (whatever it was doing at a fire, it isn't)
       chime('collapse');
       break;
+    }
     case 'woke':
       bodyWoke();
       break;
@@ -23108,7 +23126,7 @@ document.addEventListener('click', e => {
   else if (t.dataset.act === 'chat') openChat(!chatOpen());
   else if (t.dataset.act === 'ideas') { played = -Infinity; askIdeas(true); }   // found it themselves: no need to ask
   else if (t.dataset.act === 'ask-later') askIdeas(false);
-  else if (t.dataset.act === 'updates') { toggleMore(false); openUpdates(true); }
+  else if (t.dataset.act === 'updates') { toggleMore(false); openUpdates(true); track('news'); }
   else if (t.dataset.act === 'updates-close') openUpdates(false);
   else if (t.dataset.act === 'ask-send') sendIdea();
   else if (t.dataset.act === 'sound') toggleSound();
@@ -23974,9 +23992,26 @@ function bgWatch() {
   } else if (!want && bg.w) { bg.w.terminate(); bg.w = null; }
 }
 document.addEventListener('visibilitychange', bgWatch);
+// How smooth it runs on players' devices (track 'smooth'): once a visit, after SMOOTH_AFTER of the page, the next
+// SMOOTH_FRAMES frames' times while it's shown, sent as the middle one, the slow end (95th) and the share over 25 ms
+// (a frame dropped at 60 Hz), with how it was being played. The browser and device come with every event already.
+const SMOOTH_AFTER = 60000, SMOOTH_FRAMES = 1800;
+const smoothRun = { n: 0, ms: new Float32Array(SMOOTH_FRAMES), sent: BENCH || DEV };
+function smoothFrame(dt, now) {
+  if (smoothRun.sent || now < SMOOTH_AFTER || document.hidden || !(dt > 0 && dt < 250)) return;
+  smoothRun.ms[smoothRun.n++] = dt;
+  if (smoothRun.n < SMOOTH_FRAMES) return;
+  smoothRun.sent = true;
+  const a = smoothRun.ms.sort(), at = q => Math.round(a[Math.floor(q * (a.length - 1))] * 10) / 10;
+  let late = 0;
+  for (const t of a) if (t > 25) late++;
+  track('smooth', { ms: at(0.5), slow: at(0.95), late: Math.round(late / a.length * 100), zoom: Math.round(cam.zoom * 10) / 10, speed: ui.speed, touch: TOUCH.matches, dpr: devicePixelRatio });
+}
+
 function frame(now) {
   if (opening === 1) opening = 2;
   const raw = now, dt0 = raw - (perf.at || raw); perf.at = raw;
+  smoothFrame(dt0, raw);
   const fr0 = BENCH ? performance.now() : 0;
   if (bench.on) { bench.beats++; if (dt0 > 25) bench.late++; }
   if (dt0 > 0 && dt0 < 250) { perf.fps += (1000 / dt0 - perf.fps) * 0.05; perf.ms += (dt0 - perf.ms) * 0.05; }

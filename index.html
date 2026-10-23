@@ -9,11 +9,12 @@
 <script>
   // Visitors (Umami: no cookies, nothing personal), on whatever domain the meadow is played at, but not on this machine
   // or with ?dev (the same as DEV, game.js). The query (a room's code, a seed) is left out. A few moments in the game are
-  // counted too (track, game.js).
+  // counted too (track, game.js). It's our own Umami (a fork, askel-dev/umami, on Vercel with a Supabase project of its
+  // own), so there's no cap on events; the script goes by meadow.js (TRACKER_SCRIPT_NAME) so blockers pass it by.
   if (!/[?&]dev\b/.test(location.search) && !['localhost', '127.0.0.1', '[::1]', '::1'].includes(location.hostname)) {
     const s = document.createElement('script');
-    s.defer = true; s.src = 'https://cloud.umami.is/script.js';
-    s.dataset.websiteId = 'f2e4bcd0-34bc-4181-8e29-a01972841df4'; s.dataset.excludeSearch = 'true';
+    s.defer = true; s.src = 'https://stats.cryptoler.net/meadow.js';
+    s.dataset.websiteId = '5b46c6e8-db73-46ed-927e-6037b36983a4'; s.dataset.excludeSearch = 'true';
     document.head.appendChild(s);
   }
 </script>
