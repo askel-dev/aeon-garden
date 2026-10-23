@@ -19,6 +19,9 @@ const params = new URLSearchParams(location.search);
 const DEV = params.has('dev') || ['localhost', '127.0.0.1', '::1'].includes(location.hostname);
 const DEV_CARRY = 999;                  // what one satchel slot holds in dev
 if (DEV) S.setStacks(id => Math.max(Recipes.stackOf(id), DEV_CARRY), Recipes.keepOf, Recipes.usesOf);
+// A moment in the game counted for the visitors' board (Umami, index.html): firsts, level-ups, deeds. Not in dev, and
+// nothing if the script never came (offline, blocked).
+const track = (name, data) => { if (!DEV) try { window.umami && umami.track(name, data); } catch (e) { /* fine */ } };
 const BENCH = params.has('bench');            // (the phone's worst case set up by itself and timed: benchStart; implies perf)
 const BENCH_PLAN = params.get('bench') || '';  // ('walk': an ordinary day instead, the forager walking and the camera after it)
 const PERF = params.has('perf') || BENCH;     // (a live readout of frame rate and cost, bottom left)
@@ -4130,6 +4133,7 @@ function deedEarned(id) {
   const d = Recipes.DEEDS[id], f = world.forager;
   if (!d || !f || deedShown.said.has(id)) return;
   deedShown.said.add(id);
+  track('deed', { id });
   say(`✦ ${d.name} · +${d.points} cosy`, f.x, f.y - 1.6);
   chime('found');
 }
@@ -19248,6 +19252,7 @@ function announce(kind, head, line = '', opts = {}) {
 // a pick's), so the two don't play over each other. With a card open, a toast.
 const LEVEL_WAIT = 600;
 function levelUp(s, lv) {
+  track('level', { skill: s, lv });
   const k = S.SKILLS[s], top = lv >= S.SKILL_TOP, opens = s === 'cooking' ? opensAt(lv) : '';
   const says = (SKILL_SAYS[s] ? SKILL_SAYS[s](k, lv) : k.line) + (opens ? `. Now you can make ${opens}` : '');
   const ink = SKILL_INK[s] || '#c9a54a', metal = LEVEL_COIN[lv] || LEVEL_COIN[S.SKILL_TOP];
@@ -19294,6 +19299,7 @@ try { for (const k of JSON.parse(localStorage.getItem('aeon-garden-firsts') || '
 function firstTime(key, small, head, line = '') {
   if (firsts.has(key)) return;
   firsts.add(key);
+  track('first', { what: key });
   try { localStorage.setItem('aeon-garden-firsts', JSON.stringify([...firsts])); } catch (e) { /* fine */ }
   announce('first', `<small>${small}</small><b class="fr">${head}</b>`, line);
 }

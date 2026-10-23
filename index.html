@@ -6,6 +6,17 @@
 <title>Nobody's Meadow</title>
 <meta name="description" content="A small meadow that keeps its own time. Rabbits, foxes and bees live their lives, season after season, whether you're watching or not.">
 <meta name="theme-color" content="#9cc77e">
+<script>
+  // Visitors (Umami: no cookies, nothing personal), on whatever domain the meadow is played at, but not on this machine
+  // or with ?dev (the same as DEV, game.js). The query (a room's code, a seed) is left out. A few moments in the game are
+  // counted too (track, game.js).
+  if (!/[?&]dev\b/.test(location.search) && !['localhost', '127.0.0.1', '[::1]', '::1'].includes(location.hostname)) {
+    const s = document.createElement('script');
+    s.defer = true; s.src = 'https://cloud.umami.is/script.js';
+    s.dataset.websiteId = 'f2e4bcd0-34bc-4181-8e29-a01972841df4'; s.dataset.excludeSearch = 'true';
+    document.head.appendChild(s);
+  }
+</script>
 <!-- the .ico says 32x32, not "any", or Chrome picks it over the SVG. game.js swaps the SVG as the seasons turn -->
 <link rel="icon" href="assets/favicon.ico" sizes="32x32">
 <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" id="favicon">
