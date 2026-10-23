@@ -7,7 +7,7 @@
  *
  * Playing with someone (PeerJS) and the friends list (Supabase) are left alone: they are only wanted while there is a
  * network, and a stale copy would be worse than none. The old stone's function is left to itself too (stone.js falls
- * back to its hand-written lines when it can't be reached).
+ * back to its hand-written lines when it can't be reached), and so is the tally of all the meadows (tally.js keeps its own).
  *
  * The shell is served cache-first and refreshed behind it, so an update lands on the next visit without anyone bumping a
  * number by hand. It's refreshed whole, never a file at a time: a page from one update with a game.js from the one
@@ -22,14 +22,14 @@
 const VERSION = 7;
 const CACHE = `meadow-${VERSION}`;
 
-// The page, everything it loads to run (the thirteen scripts in index.html: sim, fur, dishes, items, sound, ground,
-// recipes, board, net, friends, stone, updates, game), the painters the workers pull in (fur.js is above; trees.js is not, and
+// The page, everything it loads to run (the fourteen scripts in index.html: sim, fur, dishes, items, sound, ground,
+// recipes, board, net, friends, stone, tally, updates, game), the painters the workers pull in (fur.js is above; trees.js is not, and
 // fur-worker.js / tree-worker.js are loaded by game.js), the icons the home screen and the manifest ask for, the
 // fonts index.html lays out, and the manifest itself. Paths are relative to this file, at the meadow's root.
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest',
   'sim.js', 'fur.js', 'dishes.js', 'items.js', 'sound.js', 'ground.js',
-  'recipes.js', 'board.js', 'net.js', 'friends.js', 'stone.js', 'updates.js', 'game.js',
+  'recipes.js', 'board.js', 'net.js', 'friends.js', 'stone.js', 'tally.js', 'updates.js', 'game.js',
   'trees.js', 'fur-worker.js', 'tree-worker.js',
   'assets/favicon.ico', 'assets/favicon.svg', 'assets/icon-192.png',
   'assets/apple-touch-icon.png', 'assets/logo.png',

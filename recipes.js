@@ -105,6 +105,9 @@ const INGREDIENTS = {
 //   crisp: false    true: it crunches as it's eaten, and drops crumbs
 //   bottle          1, 2, 3...: a secret dish, taught only by a bottle fished out of the water (TREASURES); till then the
 //                   things in it cook into whatever else they'd make, or a mess (cook)
+//   festival        { season, what, of }: a dish all the meadows earn together, learned everywhere once foragers have
+//                   done `of` of `what` ('fish' landed, 'dishes' cooked) in that season of the calendar (tally.js); a
+//                   secret till then, as a bottle's
 //   text            a line for its card
 const RECIPES = [
   {
@@ -448,6 +451,18 @@ const RECIPES = [
     bottle: 3,
     text: 'Water mint steeped till the pot smells of summer, sweetened with honey. The note said: for a cold evening by the water.',
   },
+  // Earned by all the meadows together (festival): when foragers everywhere have done enough of it in the season (by the
+  // calendar, game.js festivalTick with tally.js), every meadow learns it. Found no other way, as a bottle's.
+  {
+    name: 'Harvest fish',
+    vessel: 'pan',
+    time: 50,
+    icon: '🍳',
+    needs: ['fish', 'apple', 'hazelnut'],
+    warm: true,
+    festival: { season: 'autumn', what: 'fish', of: 2000 },
+    text: 'The meadows\' autumn feast: a fish fried with windfall apples and hazelnuts, for the season foragers everywhere caught two thousand fish.',
+  },
 ];
 
 // What the forager builds, from the make button by the satchel (game.js renderBuild), and what each takes out of the
@@ -742,7 +757,8 @@ const TEACHERS = ['hedgehog', 'heron', 'kingfisher', 'skylark', 'dragonfly'];
 const MESS = { name: "A forager's mess", fill: 1, time: 15, icon: '🫠', text: "It's... food. Mostly." };
 const COOK_TIME = 30;                   // seconds a dish takes if it doesn't say
 const DISH_ICON = '🥣';
-const RECIPE_KEYS = ['name', 'needs', 'at', 'vessel', 'fill', 'level', 'from', 'warm', 'known', 'time', 'icon', 'text', 'eats', 'crisp', 'bottle'];
+const FESTIVAL_WHATS = ['fish', 'dishes'];   // (what a festival counts: supabase/functions/tally's season)
+const RECIPE_KEYS = ['name', 'needs', 'at', 'vessel', 'fill', 'level', 'from', 'warm', 'known', 'time', 'icon', 'text', 'eats', 'crisp', 'bottle', 'festival'];
 const BUILD_KEYS = ['name', 'needs', 'where', 'after', 'makes', 'gone', 'text'];
 
 const recipeOf = name => RECIPES.find(r => r.name.toLowerCase() === String(name).toLowerCase());
@@ -783,11 +799,11 @@ const vesselOf = r => r.vessel || 'pot';
 
 // What comes out of a station with these things in it, cooked in a vessel: a recipe, or the mess. With no vessel (null) any
 // vessel does (game.js potWord asks it whether the things make a dish in another vessel). A bottle's dish only once its
-// bottle has taught it (knowSecrets: the game says which it knows; recipes.html knows them all).
+// bottle has taught it, a festival's once the meadows have earned it (knowSecrets: the game says which it knows; recipes.html knows them all).
 let secretKnown = () => true;
 const knowSecrets = fn => { secretKnown = fn; };
 function cook(things, at = 'fire', vessel = null) {
-  return RECIPES.find(r => (r.at || 'fire') === at && (!vessel || vesselOf(r) === vessel) && (!r.bottle || secretKnown(r)) && fits(things, r.needs)) || MESS;
+  return RECIPES.find(r => (r.at || 'fire') === at && (!vessel || vesselOf(r) === vessel) && (!(r.bottle || r.festival) || secretKnown(r)) && fits(things, r.needs)) || MESS;
 }
 
 // How long a dish cooks, in seconds at 1x.
@@ -858,6 +874,11 @@ function checkRecipes() {
     if (r.known && r.from) problems.push(`${who} is known from the start, so the ${r.from} has nothing to teach: leave one of them out.`);
     if (r.bottle != null && !Object.values(TREASURES).some(t => t.kind === 'bottle' && t.dish === r.name)) problems.push(`${who} has bottle: ${r.bottle}, but no bottle in TREASURES teaches it.`);
     if (r.bottle && (r.known || r.from)) problems.push(`${who} comes in a bottle, so it isn't known from the start or taught by a visitor.`);
+    if (r.festival != null) {
+      const F = r.festival;
+      if (!F || !['winter', 'spring', 'summer', 'autumn'].includes(F.season) || !FESTIVAL_WHATS.includes(F.what) || !(F.of >= 1)) problems.push(`${who} has festival: ${JSON.stringify(F)}, but it wants { season: 'autumn', what: ${FESTIVAL_WHATS.map(w => `'${w}'`).join(' or ')}, of: 2000 }.`);
+      if (r.known || r.from || r.bottle) problems.push(`${who} is earned by all the meadows, so it isn't known from the start, taught by a visitor or in a bottle.`);
+    }
   });
   for (const [id, b] of Object.entries(BUILDS)) {
     const who = `The build '${id}'`;

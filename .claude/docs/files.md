@@ -112,6 +112,14 @@ picture and what goes in, `renderBook`; a few dishes `known` from the start, the
   `OPENROUTER_KEY`, never in the page; the score kept in a range by what was offered, `SCORES`; daily limits in stone.sql), or from
   stone.js's hand-written lines when that can't be reached (`?stone-offline` forces them). Its name (`Old Mossbottom`) is a
   placeholder, in stone.js, the function's `NAME` and index.html.
+- `tally.js`, `supabase/functions/tally`, `supabase/tally.sql`: what all the meadows did together (2026-10-23, plans/stats/ideas.md).
+  The function reads our Umami's own Postgres (its Supabase project) with a role that can only read (tally.sql; secrets `UMAMI_DB`,
+  `UMAMI_SITE` in the game's project), once an hour, and hands back totals only: foragers in the last day and their countries,
+  how many browsers sent each `first`, the week's top dishes and catches, and the calendar season's fish landed and dishes
+  cooked. tally.js keeps one an hour in `aeon-garden-tally`; `?tally=fake` makes one up (`?tally=done`: the goal reached).
+  game.js uses it for the book's Everyone part (`everySheetHTML`, `feastPageHTML`), "Found by n%" chips (`foundChip`, shown
+  once `Tally.FEW` foragers have found anything), the dawn line (`crowdWord`), the stone's `ctx.gossip` (`tallyGossip`), and
+  the festival dish (recipes.js `festival`, `feastTick`: learned as a first once the season's count passes `of`).
 - `updates.js`: the meadow's version (`Updates.VERSION`, `0.MINOR.PATCH`: MINOR a new thing to do, PATCH the same made better)
   and `UPDATES`, a block an update (a push to main: changes made before it's committed add to the top block), newest first: its version, date, title and a few plain notes, one short sentence a change. game.js (what's new: `updatesTick`, `openUpdates`) keeps the version last shown in `aeon-garden-version` and, a few
   seconds into a quiet moment, shows the card of every block newer than it (at most three; each shows its first three notes, the biggest, and "Show N more" opens the rest). Someone new only has the version

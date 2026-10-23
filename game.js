@@ -9043,7 +9043,13 @@ function stoneCtx() {
     f.tummy < 0.25 ? 'starving' : f.tummy < 0.5 ? 'hungry' : '', f.health < 0.5 ? 'hurt' : ''].filter(Boolean);
   return { season: S.SEASONS[S.seasonOf(w.tick)].name, time, weather: w.weather.kind, day: Math.floor(w.tick / S.TPD) + 1,
     forager: (myName && Net && Net.on ? `called ${myName}, ` : '') + (feel.length ? feel.join(', ') : 'well') + (w.camp ? ', has a camp with a fire' : ', has no fire yet')
-      + (peers.size ? `, foraging with ${[...peers.values()].map(p => p.name || 'a friend').join(', ')}` : '') };
+      + (peers.size ? `, foraging with ${[...peers.values()].map(p => p.name || 'a friend').join(', ')}` : ''), gossip: tallyGossip() };
+}
+// What the other meadows cooked and caught most this week (tally.js), for the stone to be snide about.
+function tallyGossip() {
+  const T = Tally.now, d = T && T.week.dishes[0], c = T && T.week.fish[0], fish = c && Recipes.INGREDIENTS[c[0]];
+  if (!d || d[1] < 3) return '';
+  return `foragers in the other meadows cooked ${d[0]} more than anything (${d[1]} times)` + (fish && c[1] >= 3 ? ` and caught mostly ${fish.name.toLowerCase()}` : '');
 }
 // Says something to the stone (or offers it something), and its answer comes as a bubble over it. said: words; offer: what's given.
 // Together, the friends see it all (t: 'stone', heardStone): the words or the offering over whoever said them, the stone's
@@ -12930,9 +12936,13 @@ for (const sec of FIND_SECTIONS) for (const id of findSec.keys()) if (findSec.ge
 // left page is the sheet (the face, how you are, the skills as rows); the right one is the skill picked, as a recipe's.
 const YOU_PAGES = [];
 for (const s of S.SKILL_NAMES) YOU_PAGES.push({ r: null, g: '', skill: s, key: 'skill:' + s, part: 'you', sec: null, no: YOU_PAGES.length + 1, i: YOU_PAGES.length });
+// Its fourth, Everyone: what all the meadows did together (tally.js), the left page a sheet as You's (foragers today, the
+// week's best-loved dishes and catches), the right one the season's feast (recipes.js festival). Its tab shows only once
+// there's a tally.
+const EVERY_PAGES = [{ r: null, g: '', every: true, key: 'every:feast', part: 'every', sec: null, no: 1, i: 0 }];
 const BOOK_PARTS = { dishes: { name: 'Recipes', pages: BOOK_PAGES, sections: BOOK_SECTIONS }, finds: { name: 'Finds', pages: FIND_PAGES, sections: FIND_SECTIONS },
-  you: { name: 'You', pages: YOU_PAGES, sections: [] } };
-const ALL_PAGES = [...BOOK_PAGES, ...FIND_PAGES, ...YOU_PAGES];
+  you: { name: 'You', pages: YOU_PAGES, sections: [] }, every: { name: 'Everyone', pages: EVERY_PAGES, sections: [] } };
+const ALL_PAGES = [...BOOK_PAGES, ...FIND_PAGES, ...YOU_PAGES, ...EVERY_PAGES];
 const BOOK_PAGE = new Map(ALL_PAGES.map(p => [p.key, p]));
 const bookAt = () => BOOK_PAGE.get(bookUi.pick) || BOOK_PAGES[0];
 const bookPart = () => bookAt().part;
@@ -12945,7 +12955,7 @@ const foundIt = id => Recipes.TREASURES[id] ? !!world && world.hauled.includes(i
 // do the finds in a book kept from before it had them.
 let bookSeen = null;
 const pageLevel = r => knownDish(r.name) ? 9 : (hinted.get(r.name) || []).length;
-const levelOf = p => p.skill ? (world ? world.forager.lv[p.skill] : 0) : p.r ? pageLevel(p.r) : foundIt(p.g) ? 9 : 0;
+const levelOf = p => p.skill ? (world ? world.forager.lv[p.skill] : 0) : p.every ? (feastNow() && knownDish(feastNow().name) ? 9 : 0) : p.r ? pageLevel(p.r) : foundIt(p.g) ? 9 : 0;
 function seenBook() {
   if (bookSeen) return bookSeen;
   try { bookSeen = JSON.parse(localStorage.getItem(BOOK_KEY) || 'null'); } catch (e) { /* fine */ }
@@ -13009,10 +13019,11 @@ function halfName(r) {
 }
 
 // The parts' ribbons: a colour and a small mark each (the marks are stroked, drawn in the ribbon's text colour).
-const PART_INK = { dishes: '#c9733a', finds: '#6f9446', you: '#4f72a6' };
+const PART_INK = { dishes: '#c9733a', finds: '#6f9446', you: '#4f72a6', every: '#9a6a9e' };
 const rmark = d => `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="${d}"/></svg>`;
 const PART_MARK = { dishes: rmark('M2 8h12c0 3-2.5 5-6 5S2 11 2 8zM5.5 2.5c1 .9 1 1.9 0 2.8M9 2.5c1 .9 1 1.9 0 2.8'),
-  finds: rmark('M3 8a5 4 0 0 1 10 0zM8 8v5.5M6.5 13.5h3'), you: rmark('M5.2 5.5a2.8 2.8 0 1 0 5.6 0 2.8 2.8 0 1 0-5.6 0M2.8 14c.6-3 2.7-4.4 5.2-4.4s4.6 1.4 5.2 4.4') };
+  finds: rmark('M3 8a5 4 0 0 1 10 0zM8 8v5.5M6.5 13.5h3'), you: rmark('M5.2 5.5a2.8 2.8 0 1 0 5.6 0 2.8 2.8 0 1 0-5.6 0M2.8 14c.6-3 2.7-4.4 5.2-4.4s4.6 1.4 5.2 4.4'),
+  every: rmark('M3.6 5.8a2 2 0 1 0 4 0 2 2 0 1 0-4 0M8.4 5.8a2 2 0 1 0 4 0 2 2 0 1 0-4 0M1.6 13c.4-2.2 1.9-3.4 4-3.4 1 0 1.8.3 2.4.8.6-.5 1.4-.8 2.4-.8 2.1 0 3.6 1.2 4 3.4') };
 const BOTTLE_MARK = '<svg class="bottle-mark" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 1.5h3M7 1.5v3L5 7v6.5h6V7L9 4.5v-3M5 10h6"/></svg>';   // (a small bottle: a dish from one, recipes.js bottle)
 const bsvg = d => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 const B_X = bsvg('M6.5 6.5l11 11M17.5 6.5l-11 11'), B_PREV = bsvg('M14.5 5.5L8 12l6.5 6.5'), B_NEXT = bsvg('M9.5 5.5L16 12l-6.5 6.5');
@@ -13025,6 +13036,7 @@ $('#book').innerHTML = `<button class="bb b-x" data-act="book-close" aria-label=
   <section class="b-pages">${['dishes', 'finds'].map(k => { const b = BOOK_PARTS[k]; return `<div class="part" data-part="${k}">${b.sections.filter(s => b.pages.some(p => p.sec === s)).map(s => `
     <h3 class="sec">${s.name}<span data-sec="${s.k}"></span></h3><div class="grid" data-sec="${s.k}"></div>`).join('')}</div>`; }).join('')}
     <div class="part" data-part="you"><div class="you-page" data-you></div></div>
+    <div class="part" data-part="every"><div class="you-page" data-every></div></div>
   </section>
   <footer class="b-foot"><button class="bb x" data-act="book-close" aria-label="Close the book">${B_X}</button></footer>
   <section class="b-page"></section>`;
@@ -13046,7 +13058,7 @@ function bookPageHTML(p, have, atPot) {
       + `<div class="facts">${r.bottle ? `<span class="chip bottle" title="From a bottle fished out of the water">${BOTTLE_MARK} From a bottle</span>` : ''}${r.warm ? '<span class="chip warm">✦ Warms you</span>' : ''}`
       + `<span class="chip" title="${esc(Recipes.VESSELS[Recipes.vesselOf(r)]?.word || '')}">${Recipes.VESSELS[Recipes.vesselOf(r)]?.icon || ''} ${esc(Recipes.VESSELS[Recipes.vesselOf(r)]?.name || '')}</span>`
       + `<span class="chip fills" title="How much it fills you">Fills <b>${'<i class="on"></i>'.repeat(fill)}${'<i></i>'.repeat(BOOK_PIPS - fill)}</b></span>`
-      + `<span class="chip" title="How long it cooks on the fire">⏲ ${timeWord(Recipes.timeOf(r))}</span></div>`;
+      + `<span class="chip" title="How long it cooks on the fire">⏲ ${timeWord(Recipes.timeOf(r))}</span>${r.festival ? '<span class="chip warm" title="Earned by every meadow together">✦ A festival dish</span>' : ''}${foundChip('dish:' + r.name)}</div>`;
     needs = ns.map(n => `<li class="${n.got ? 'got' : 'want'}">${itemIcon(n.id)}<span>${esc(upFirst(needName(n.word)))}</span><em>${n.got ? '✓ in the satchel' : 'not in the satchel'}</em></li>`).join('');
     const busy = cooking() && !atPot, vs = Recipes.vesselOf(r), owned = !world || ownsVessel(vs), can = ready && !busy && owned;
     go = !owned && !busy && makeLocked(vs) ? `<button class="go make" disabled>${Recipes.VESSELS[vs].icon} A ${esc(craftName(vs))} wants Cooking ${Recipes.craftLevel(vs)}</button>`
@@ -13059,13 +13071,20 @@ function bookPageHTML(p, have, atPot) {
     body = `<p class="hint">Half remembered. Find what's missing and try it at the fire.</p>`;
     needs = h.shown.map(w => { const id = needId(w, have); return `<li class="${have[id] > 0 ? 'got' : 'want'}">${itemIcon(id)}<span>${esc(upFirst(needName(w)))}</span><em>${have[id] > 0 ? '✓ in the satchel' : 'not in the satchel'}</em></li>`; }).join('')
       + '<li class="q"><b>?</b><span>Something still to find</span></li>'.repeat(h.left.length);
+  } else if (r.festival) {                                 // (found no other way: recipes.js festival, the Everyone page)
+    const F = r.festival, [things, done] = FEAST_WORD[F.what];
+    head = '<h3 class="fr q">? ? ?</h3>';
+    body = `<p class="hint">A festival dish, earned by every meadow together: once foragers everywhere have ${done} ${num(F.of)} ${things} in ${F.season}, it's in everyone's book.</p>`
+      + (feastNow() === r ? `<ul class="needs"><li class="use"><button data-act="book-page" data-name="every:feast">${itemIcon(r.name, 'shade')}<span>${num(feastCount(r))} of ${num(F.of)} so far</span><em>Everyone ›</em></button></li></ul>` : '');
+    needs = '<li class="q"><b>?</b><span>&nbsp;</span></li>'.repeat(r.needs.length);
   } else if (r.bottle) {                                   // (found no other way: recipes.js bottle)
     head = '<h3 class="fr q">? ? ?</h3>';
     body = `<p class="hint">${BOTTLE_MARK} A secret recipe. It isn't found at the fire: it's written on a note in a bottle, somewhere at the bottom of the water.</p>`;
     needs = '<li class="q"><b>?</b><span>&nbsp;</span></li>'.repeat(r.needs.length);
   } else {
     head = '<h3 class="fr q">? ? ?</h3>';
-    body = `<p class="hint">Not found yet. Something ${p.sec.word}, of ${NUM_WORDS[r.needs.length] || r.needs.length} things: try a few together at the fire, or keep foraging and you may think of it.</p>`;
+    body = `<p class="hint">Not found yet. Something ${p.sec.word}, of ${NUM_WORDS[r.needs.length] || r.needs.length} things: try a few together at the fire, or keep foraging and you may think of it.</p>`
+      + (foundChip('dish:' + r.name) ? `<div class="facts">${foundChip('dish:' + r.name)}</div>` : '');
     needs = '<li class="q"><b>?</b><span>&nbsp;</span></li>'.repeat(r.needs.length);
   }
   const stampHTML = stamp ? `<span class="stamp${performance.now() - bookUi.stampAt > STAMP_MS ? ' still' : ''}">${st === 'known' ? 'Learned!' : 'A hint'}</span>` : '';
@@ -13174,13 +13193,13 @@ function findPageHTML(p, have) {
       + (!food ? '<span class="chip">Not for eating</span>' : g.raw === false ? '<span class="chip">Cook it first</span>' : '<span class="chip">Good raw</span>')
       + (food ? `<span class="chip fills" title="How much it fills you raw">Fills <b>${'<i class="on"></i>'.repeat(fill)}${'<i></i>'.repeat(BOOK_PIPS - fill)}</b></span>` : '')
       + (world && world.forager.fishBest[p.g] ? `<span class="chip warm" title="The biggest you've landed">Biggest <b>${gramsSaid(world.forager.fishBest[p.g])}</b></span>` : '')
-      + (CATCHES[p.g] ? rareChip(p.g) : '') + '</div>'
+      + (CATCHES[p.g] ? rareChip(p.g) : '') + foundChip(p.g) + '</div>'
       + (g.where ? `<h4>Where to find it</h4><p class="hint">${esc(g.where)}</p>` : '') + guideLink(p.g);
     const uses = findUses(p.g);
     if (uses) body += `<h4>What it goes into</h4><ul class="needs">${uses}</ul>`;
   } else {
     head = '<h3 class="fr q">? ? ?</h3>';
-    body = '<p class="hint">Not found yet.</p>' + (CATCHES[p.g] ? `<div class="facts">${rareChip(p.g)}</div>` : '') + (g.where ? `<h4>Where to look</h4><p class="hint">${esc(g.where)}</p>` : '') + guideLink(p.g);
+    body = '<p class="hint">Not found yet.</p>' + (CATCHES[p.g] || foundChip(p.g) ? `<div class="facts">${CATCHES[p.g] ? rareChip(p.g) : ''}${foundChip(p.g)}</div>` : '') + (g.where ? `<h4>Where to look</h4><p class="hint">${esc(g.where)}</p>` : '') + guideLink(p.g);
   }
   const stampHTML = stamp ? `<span class="stamp${performance.now() - bookUi.stampAt > STAMP_MS ? ' still' : ''}">Found!</span>` : '';
   const pages = FIND_PAGES.length;
@@ -13300,6 +13319,72 @@ function skillPageHTML(p, f) {
       <button class="bb" data-act="book-next" aria-label="Skill after" title="Skill after (→)"${p.i < YOU_PAGES.length - 1 ? '' : ' disabled'}>${B_NEXT}</button>
     </div>`;
 }
+// How many of everyone who's played found it (tally.js; the firsts each browser sends once ever), as a chip: nothing while
+// too few have played to say, or none of them has (a thing never sent: what a meadow opens with, the treasures).
+function foundChip(key) {
+  const s = Tally.share(key);
+  if (!s) return '';
+  const pc = Math.round(s * 100), said = s > 0.97 ? 'Found by nearly everyone' : pc < 1 ? 'Found by fewer than 1 in 100' : `Found by ${pc}% of foragers`;
+  return `<span class="chip found" title="Of everyone who has played Nobody's Meadow">${said}</span>`;
+}
+const num = n => Math.round(n).toLocaleString('en');
+// The meadows' feast for the season the tally is counting (recipes.js festival), and how far everyone has got toward it.
+const FEASTS = Recipes.RECIPES.filter(r => r.festival);
+const FEAST_WORD = { fish: ['fish', 'caught'], dishes: ['dishes', 'cooked'] };
+const feastNow = () => { const T = Tally.now; return T && T.season ? FEASTS.find(r => r.festival.season === T.season.name) || null : null; };
+const feastCount = r => { const T = Tally.now; return T && T.season ? T.season[r.festival.what] || 0 : 0; };
+const feastEnds = () => { const t = new Date(Date.parse(Tally.now.season.till) - 86400e3); return t.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', timeZone: 'UTC' }); };
+// Reached: every meadow learns it, as a first (the stamp, the headline), once a tally says so and there's room to say it.
+let feastDue = true;
+Tally.on(() => { feastDue = true; bookUi.key = ''; renderBook(); });
+function feastTick() {
+  const r = feastNow();
+  feastDue = false;
+  if (!r || knownDish(r.name) || feastCount(r) < r.festival.of) return;
+  const [things, done] = FEAST_WORD[r.festival.what];
+  firstTime('dish:' + r.name, 'all the meadows together', esc(r.name), `Foragers everywhere ${done} ${num(r.festival.of)} ${things} this ${r.festival.season}, and every meadow learns the feast.`);
+  bookUi.key = ''; renderBook();
+}
+function everySheetHTML(have) {
+  const T = Tally.now;
+  if (!T) return '';
+  const r = feastNow(), loved = T.week.dishes.filter(([n]) => BOOK_PAGE.has(n)).slice(0, 3), caught = T.week.fish.filter(([k]) => Recipes.INGREDIENTS[k]).slice(0, 3);
+  let feast = '';
+  if (r) {
+    const F = r.festival, got = knownDish(r.name), n = feastCount(r), [things, done] = FEAST_WORD[F.what];
+    feast = `<h3 class="sec">The ${esc(F.season)} feast</h3>
+      <button class="you-sk every-feast${bookUi.pick === 'every:feast' ? ' on' : ''}" data-act="book-page" data-name="every:feast">${itemIcon(r.name, got ? '' : 'shade')}
+      <span class="you-sk-main"><span class="you-sk-top"><b>${got ? esc(r.name) : 'A dish for every meadow'}</b><span>${num(Math.min(n, F.of))} / ${num(F.of)} ${things}</span></span>
+      ${youBar(n / F.of, PART_INK.every)}</span></button>`;
+  }
+  return `<div class="you-head"><h2 class="fr">All the meadows</h2><span>${T.fake ? 'made up' : 'this week'}</span></div>
+    <div class="you-lines">
+      <div class="you-line">Foragers today <span class="hand">${num(T.day.foragers)}</span></div>
+      ${T.day.countries > 1 ? `<div class="you-line">In countries <span class="hand">${num(T.day.countries)}</span></div>` : ''}
+    </div>${feast}
+    ${loved.length ? `<h3 class="sec">Best loved this week</h3><div class="grid every-loved">${loved.map(([n, k]) =>
+      `<div class="every-dish">${bookTileHTML(BOOK_PAGE.get(n), have)}<small>cooked ${num(k)} times</small></div>`).join('')}</div>` : ''}
+    ${caught.length ? `<h3 class="sec">Most caught</h3><ul class="needs every-caught">${caught.map(([k, n]) => {
+      const got = foundIt(k);
+      return `<li class="use"><button data-act="book-page" data-name="${esc('find:' + k)}">${itemIcon(k, got ? '' : 'shade')}<span>${got ? esc(Recipes.INGREDIENTS[k].name) : '? ? ?'}</span><em>${num(n)} landed</em></button></li>`;
+    }).join('')}</ul>` : ''}`;
+}
+function feastPageHTML() {
+  const r = feastNow(), foot = `<div class="pg-foot"><span class="of"></span><button class="bb x" data-act="book-back" aria-label="Back to everyone" title="Back (Esc)">${B_X}</button><span class="of"></span></div>`;
+  if (!r) return `<div class="pg-grab"><div class="no">The season's feast</div></div><div class="pg-body"><div class="pg-in">
+    <h3 class="fr q">No feast this season</h3><p class="hint">${FEASTS.length ? `The next comes in ${esc(FEASTS[0].festival.season)}.` : ''}</p></div></div>${foot}`;
+  const F = r.festival, got = knownDish(r.name), n = feastCount(r), [things, done] = FEAST_WORD[F.what];
+  return `<div class="pg-grab"><div class="no">The ${esc(F.season)} feast · every meadow</div></div>
+    <div class="pg-body"><div class="pg-in">
+      <div class="art">${dishArt(r, got ? '' : 'sil', true)}</div>
+      <h3 class="fr${got ? '' : ' q'}">${got ? esc(r.name) : '? ? ?'}</h3>
+      <p class="say">${got ? esc(r.text) : `When foragers everywhere have ${done} ${num(F.of)} ${things} this ${esc(F.season)}, every meadow learns a recipe it can't be found any other way.`}</p>
+      ${youBar(n / F.of, PART_INK.every, ' big')}
+      <div class="you-prog"><span>${num(n)} ${things} ${done}</span><span>of ${num(F.of)}</span></div>
+      <p class="you-note">Counted from every meadow, ${esc(F.season)} as the calendar has it: it ends on ${feastEnds()}.${n >= F.of ? ' Reached!' : ''}</p>
+      ${got ? `<ul class="needs"><li class="use"><button data-act="book-page" data-name="${esc(r.name)}">${itemIcon(r.name)}<span>${esc(r.name)}</span><em>No. ${BOOK_PAGE.get(r.name).no} ›</em></button></li></ul>` : ''}
+    </div></div>${foot}`;
+}
 // The book button's "New": a glow while a page has news and the book's shut.
 function bookNews() {
   const glow = !bookUi.open && ALL_PAGES.some(pageFresh);
@@ -13371,30 +13456,33 @@ function renderBook() {
   bookNews();
   if (!bookUi.open) return;
   itemSheet();
-  const have = haveAt(storesHere()), atPot = cooking() && ui.fire.stage === 'cook', p = bookAt(), part = p.part, you = part === 'you', f = world.forager, B = BOOK_PARTS[part];
+  const have = haveAt(storesHere()), atPot = cooking() && ui.fire.stage === 'cook', p = bookAt(), part = p.part, you = part === 'you', every = part === 'every', f = world.forager, B = BOOK_PARTS[part];
   bookUi.picked[part] = p.key; bookUi.shown.add(part);
   const shown = (!bookUpright() || bookUi.depth === 2) && seePage(p);   // (shown: seen, stamped)
-  if (shown && !you) { bookUi.stamp = p.key; bookUi.stampAt = performance.now(); }
+  if (shown && !you && !every) { bookUi.stamp = p.key; bookUi.stampAt = performance.now(); }
   const skillKey = you ? S.SKILL_NAMES.map(s => `${f.lv[s]}:${Math.round(S.skillProgress(f, s) * 100)}:${skillLeft(s, f)}`).join(',') : '';
-  const key = ALL_PAGES.map(q => levelOf(q) + (pageFresh(q) ? 'n' : '')).join(',') + '|' + skillKey + '|' + JSON.stringify(have) + '|' + atPot + cooking() + '|' + p.key + '|' + bookUi.stamp + '|' + (world ? world.fires.map(F => F.own.join()).join('|') + world.forager.kit.firing + (ui.fire ? ui.fire.F.x : '') : '') + (you ? '|' + youKey() : '');
+  const key = ALL_PAGES.map(q => levelOf(q) + (pageFresh(q) ? 'n' : '')).join(',') + '|' + skillKey + '|' + JSON.stringify(have) + '|' + atPot + cooking() + '|' + p.key + '|' + bookUi.stamp + '|' + (world ? world.fires.map(F => F.own.join()).join('|') + world.forager.kit.firing + (ui.fire ? ui.fire.F.x : '') : '') + (you ? '|' + youKey() : '') + '|' + (Tally.now ? Tally.now.at : '');
   if (key === bookUi.key) return;
   bookUi.key = key;
   const el = $('#book'), got = q => levelOf(q) === 9;
   let known, all;
   if (you) { known = S.SKILL_NAMES.reduce((n, s) => n + f.lv[s], 0); all = S.SKILL_NAMES.length * S.SKILL_TOP; }
+  else if (every) { const r = feastNow(); known = r ? Math.min(feastCount(r), r.festival.of) : 0; all = r ? r.festival.of : 1; }
   else { known = B.pages.filter(got).length; all = B.pages.length; }
   for (const t of el.querySelectorAll('.b-head .tab')) {
     const on = t.dataset.part === part;
     t.classList.toggle('on', on); t.setAttribute('aria-selected', on);
     t.classList.toggle('new', !on && BOOK_PARTS[t.dataset.part].pages.some(pageFresh));
+    t.hidden = t.dataset.part === 'every' && !Tally.now;
   }
   for (const d of el.querySelectorAll('.b-pages .part')) d.hidden = d.dataset.part !== part;
-  setHTML(el.querySelector('.b-head .n'), `${known}<small>/${all}</small>`);
+  setHTML(el.querySelector('.b-head .n'), `${num(known)}<small>/${num(all)}</small>`);
   el.querySelector('.b-bar i').style.width = (known / all * 100).toFixed(1) + '%';
-  bookText(el.querySelector('#book-sub'), part === 'you' ? 'How you are, and the road each skill is on'
+  bookText(el.querySelector('#book-sub'), part === 'you' ? 'How you are, and the road each skill is on' : every ? 'What every meadow did together'
     : part === 'finds' ? (known < all ? 'What the meadow gives: each season brings its own' : 'Everything the meadow gives, found')
     : atPot ? 'At the pot: a known recipe puts its things in' : known < all ? 'Try things together at the fire to find the rest' : 'Every recipe found');
   if (you) setHTML(el.querySelector('.part[data-part="you"] [data-you]'), youSheetHTML());
+  else if (every) setHTML(el.querySelector('.part[data-part="every"] [data-every]'), everySheetHTML(have));
   else for (const s of B.sections) {
     const grid = el.querySelector(`.part[data-part="${part}"] .grid[data-sec="${s.k}"]`);
     if (!grid) continue;
@@ -13402,7 +13490,7 @@ function renderBook() {
     bookText(el.querySelector(`.part[data-part="${part}"] h3.sec span[data-sec="${s.k}"]`), `${pages.filter(got).length}/${pages.length}`);
     setHTML(grid, pages.map(q => q.r ? bookTileHTML(q, have) : findTileHTML(q, have)).join(''));
   }
-  setHTML(el.querySelector('.b-page'), p.skill ? skillPageHTML(p, f) : p.r ? bookPageHTML(p, have, atPot) : findPageHTML(p, have));
+  setHTML(el.querySelector('.b-page'), p.skill ? skillPageHTML(p, f) : p.every ? feastPageHTML() : p.r ? bookPageHTML(p, have, atPot) : findPageHTML(p, have));
   el.querySelector('.b-page').classList.toggle('you-skill', !!p.skill);
   if (you) paintYouFace();
 }
@@ -13874,7 +13962,7 @@ function hintTick(now) {
   const have = bagHave();
   let best = null;
   for (const r of FIRE_DISHES) {
-    if (knownDish(r.name) || r.bottle) continue;   // (a bottle's dish comes only in its bottle)
+    if (knownDish(r.name) || r.bottle || r.festival) continue;   // (a bottle's dish comes only in its bottle, a festival's from all the meadows)
     const got = needsHad(r.needs, have).filter(n => n.got), told = hinted.get(r.name) || [];
     if (!got.length) continue;
     const fresh = got.filter(n => told.filter(x => x === n.word).length < got.filter(m => m.word === n.word).length).length;
@@ -19246,7 +19334,7 @@ const SEASON_LINES = [
   'Blackberries on the brambles, apples falling, nuts and mushrooms in the woods.',
   'Rosehips in the scrub and watercress in the shallows. Keep warm.',
 ];
-const announcing = { el: $('#announce'), timer: 0, until: 0, wait: [], day: -1, openAt: 0 };
+const announcing = { el: $('#announce'), timer: 0, until: 0, wait: [], day: -1, openAt: 0, crowdAt: 0 };
 function announce(kind, head, line = '', opts = {}) {
   const a = announcing, now = performance.now();
   if (now < a.until && kind !== 'camp') { if (kind !== 'day' && a.wait.length < 4) a.wait.push([kind, head, line, opts]); return; }   // (camp cuts in)
@@ -19284,14 +19372,24 @@ const DAYS_SENT = [2, 3, 5, 8, 15, 29, 57, 113];   // a meadow reaching one of t
 function daybreakTick(now) {
   const a = announcing, day = Math.floor(world.tick / S.TPD), last = a.day, ck = S.clock(world), name = S.SEASONS[ck.season].name;
   a.day = day;
+  if (feastDue && Tally.now && !intro.on && canAnnounce()) feastTick();
   if (a.openAt && now >= a.openAt && !intro.on) {        // (not over a new meadow's opening: it comes once the bars are off)
     a.openAt = 0;
     if (canAnnounce()) announce('day', `<b class="fr">${name}, day ${ck.dayInSeason}</b><small>year ${ck.year}</small>`, SEASON_LINES[ck.season]);
   }
   if (last >= 0 && day === last + 1 && DAYS_SENT.includes(day + 1)) track('day', { day: day + 1 });   // (how long a meadow is kept: the day it reached)
   if (last < 0 || day !== last + 1 || !canAnnounce()) return;   // (no line for days skipped: a meadow opened, a friend's)
-  if (ck.dayInSeason > 1) { announce('day', `<b class="fr">${name}, day ${ck.dayInSeason}</b>`, morningWord()); return; }
+  if (ck.dayInSeason > 1) { announce('day', `<b class="fr">${name}, day ${ck.dayInSeason}</b>`, morningWord() || crowdWord()); return; }
   announce('season', `<b class="fr">${name}</b><small>year ${ck.year}</small>`, SEASON_LINES[ck.season]);
+}
+// Now and then, on a morning with nothing else to say: how many foragers walked a meadow today (tally.js), so it isn't
+// nobody's meadow after all. Once in CROWD_MS at most, and not while only you have.
+const CROWD_MS = 40 * 60 * 1000;
+function crowdWord() {
+  const T = Tally.now, t = Date.now();
+  if (!T || T.day.foragers < 3 || t - announcing.crowdAt < CROWD_MS) return '';
+  announcing.crowdAt = t;
+  return `${num(T.day.foragers)} foragers walked a meadow today${T.day.countries > 1 ? `, in ${num(T.day.countries)} countries` : ''}.`;
 }
 function morningWord() {
   const k = world.weather.kind;

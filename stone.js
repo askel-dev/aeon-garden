@@ -42,11 +42,15 @@ const LINES = {
   junk: [[0, 'shocked', 'Did you just feed me a STICK? I am a deity, not a beaver. Zero.'], [1, 'shocked', 'A pebble. You fed a stone… a smaller stone. Is this a joke? One, for nerve.'],
     [0, 'disgusted', 'Kindling. You have offered me KINDLING. Zero, and a frown.']],
 };
+const GOSSIP = ['The wind says every meadow is making # this week. Copycats, the lot of them.', 'Everyone is cooking #. Nobody brings ME any. Hmph.',
+  'The crows tell me # is all the rage. In 1203 it was gravel. I preferred gravel.'];
 function written(b, tired) {
   if (b.offer) {
     const o = b.offer, [score, mood, say] = pick(o.dish ? LINES.dish : o.mess ? LINES.mess : o.junk ? LINES.junk : LINES.raw);
     return { say, mood, score, live: false };
   }
+  const g = b.ctx && b.ctx.gossip, dish = g && (g.match(/cooked (.+?) more than/) || [])[1];   // (now and then, what the wind brought from the other meadows)
+  if (dish && !tired && Math.random() < 0.3) return { say: pick(GOSSIP).replace('#', dish), mood: 'grumpy', score: null, live: false };
   return { say: pick(tired ? LINES.tired : b.said ? LINES.talk : LINES.hello), mood: tired ? 'awake' : b.said ? 'awake' : 'pleased', score: null, live: false };
 }
 

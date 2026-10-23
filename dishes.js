@@ -2599,6 +2599,56 @@ function paintMintTea(g) {
   strokeIn(g, 'rgba(255, 255, 250, 0.3)', 0.035, () => { g.moveTo(0.04, -0.46); g.bezierCurveTo(-0.06, -0.62, 0.14, -0.7, 0.06, -0.86); g.moveTo(0.26, -0.44); g.bezierCurveTo(0.2, -0.56, 0.36, -0.64, 0.3, -0.8); });
 }
 
+// ------------------------------------------------------------------ harvest fish
+//
+// The meadows' autumn feast (recipes.js festival), fried in the clay pan: a whole roach browned and blistered lying in a
+// golden jus, windfall apple wedges round it fried soft and caramel at their edges, their red skin curled along the
+// back, and toasted hazelnuts, halves and crumbs, scattered over. Two copper beech leaves tucked in for the season. A curl
+// of steam.
+const HARVEST_SKIN = [176, 44, 32], HARVEST_FLESH = [236, 188, 104], HARVEST_LEAF = [176, 92, 38];
+// An apple wedge, r long, turned by rot: the fried flesh a half moon, the skin a red band along its curved back.
+function harvestWedgeAt(g, x, y, r, rot) {
+  g.save(); g.translate(x, y); g.rotate(rot);
+  const flesh = () => { g.moveTo(-r, 0); g.quadraticCurveTo(0, -r * 1.05, r, 0); g.quadraticCurveTo(0, r * 0.12, -r, 0); g.closePath(); };
+  furGlow(g, [70, 34, 14], 0.45, r * 0.08, r * 0.06, r * 0.95, r * 0.28);                     // where it lies in the jus
+  softIn(g, HARVEST_FLESH, -r * 0.55, r * 0.06, flesh, 1.25, 0.8);
+  g.save(); g.beginPath(); flesh(); g.clip();
+  furGlow(g, [150, 76, 22], 0.7, r * 0.7, -r * 0.08, r * 0.45, r * 0.3);                      // caramel at its ends
+  furGlow(g, [150, 76, 22], 0.55, -r * 0.75, -r * 0.06, r * 0.35, r * 0.24);
+  g.restore();
+  strokeIn(g, rgba(HARVEST_SKIN), r * 0.16, () => { g.moveTo(-r * 0.9, -r * 0.06); g.quadraticCurveTo(0, -r * 0.98, r * 0.9, -r * 0.06); });   // the skin
+  strokeIn(g, rgba(tone(HARVEST_SKIN, 1.5, 40), 0.75), r * 0.05, () => { g.moveTo(-r * 0.6, -r * 0.42); g.quadraticCurveTo(-r * 0.2, -r * 0.62, r * 0.2, -r * 0.6); });   // glossy
+  fillIn(g, rgba([120, 70, 30], 0.7), () => { ovalAt(g, -r * 0.12, -r * 0.3, r * 0.05, r * 0.03, 0.4); ovalAt(g, r * 0.12, -r * 0.28, r * 0.05, r * 0.03, -0.4); });   // the pips' marks
+  g.restore();
+}
+// A copper beech leaf, len long, turned by rot.
+function harvestLeafAt(g, x, y, len, rot) {
+  g.save(); g.translate(x, y); g.rotate(rot);
+  const leaf = () => { g.moveTo(-len / 2, 0); g.quadraticCurveTo(0, -len * 0.36, len / 2, 0); g.quadraticCurveTo(0, len * 0.36, -len / 2, 0); g.closePath(); };
+  softIn(g, HARVEST_LEAF, -len * 0.3, len * 0.3, leaf, 1.25, 0.65);
+  strokeIn(g, rgba(tone(HARVEST_LEAF, 0.55), 0.7), len * 0.04, () => { g.moveTo(-len / 2, 0); g.lineTo(len * 0.42, 0); for (let i = -1; i <= 1; i++) { g.moveTo(i * len * 0.16, 0); g.lineTo(i * len * 0.16 + len * 0.1, -len * 0.18); g.moveTo(i * len * 0.16, 0); g.lineTo(i * len * 0.16 + len * 0.1, len * 0.18); } });
+  g.restore();
+}
+function paintHarvestFish(g) {
+  const { cy, IX, IY } = CLAY_PAN;
+  clayPan(g, () => {
+    softIn(g, JUS, cy - IY, cy + IY, () => ovalAt(g, 0, cy + 0.02, IX * 0.97, IY * 0.9), 1.3, 0.6);
+    furGlow(g, [255, 210, 110], 0.4, -0.2, cy - 0.02, 0.5, 0.14);
+    furGlow(g, [60, 30, 12], 0.5, 0.3, cy + 0.15, 0.5, 0.1);
+    harvestWedgeAt(g, -0.46, cy - 0.12, 0.22, -0.35);
+    harvestWedgeAt(g, 0.42, cy - 0.14, 0.22, 0.4);
+    cookedFishAt(g, -0.04, cy - 0.1, 1.2, -0.06, FISHC_ROACH);
+    harvestWedgeAt(g, -0.4, cy + 0.12, 0.25, 0.15);
+    harvestWedgeAt(g, 0.36, cy + 0.13, 0.25, -0.2);
+    for (const [x, y, r, rot, k] of [[-0.02, cy + 0.15, 0.08, 0.6, 1], [0.62, cy + 0.04, 0.075, -0.8, 2], [-0.66, cy + 0.04, 0.075, 1.4, 0]]) hazelKernelAt(g, x, y, r, rot, k);
+    for (const [x, y, sz, rot, k] of [[0.14, cy + 0.2, 0.036, 1.2, 1], [-0.18, cy + 0.2, 0.036, 2.2, 1], [0.6, cy - 0.1, 0.032, 0.9, 0], [-0.62, cy - 0.1, 0.034, 0.3, 2]]) shardAt(g, x, y, sz, rot, k);
+    fillIn(g, 'rgba(255, 240, 190, 0.8)', () => { ovalAt(g, -0.66, cy + 0.14, 0.02, 0.01); ovalAt(g, 0.62, cy + 0.16, 0.018, 0.009); });   // gleams on the jus
+  });
+  harvestLeafAt(g, -0.74, 0.0, 0.34, -0.7);                                                     // tucked in over the rim
+  harvestLeafAt(g, 0.76, 0.02, 0.3, 0.8);
+  strokeIn(g, 'rgba(255, 255, 250, 0.3)', 0.035, () => { g.moveTo(-0.16, -0.22); g.bezierCurveTo(-0.26, -0.4, -0.06, -0.5, -0.14, -0.7); g.moveTo(0.2, -0.2); g.bezierCurveTo(0.14, -0.36, 0.32, -0.44, 0.24, -0.64); });
+}
+
 const PAINTED = [
   ['Roast mushrooms', paintRoastMushrooms],
   ['Baked apple with honey', paintBakedApple],
@@ -2639,6 +2689,7 @@ const PAINTED = [
   ['Honeyed eel', paintHoneyedEel],
   ["Fisher's mussel broth", paintMusselBroth],
   ['Mint tea with honey', paintMintTea],
+  ['Harvest fish', paintHarvestFish],
 ];
 const NAMES = PAINTED.map(p => p[0]);
 function paint(g, size, U, n) {

@@ -1841,6 +1841,17 @@
     font: 650 9px/1 Fraunces, Georgia, serif; background: var(--coin);
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4), 0 0 0 1px color-mix(in srgb, var(--coin) 55%, #2c1a06); }
   #book .b-page p.you-note { margin-top: 7px; font-size: 13px; }
+  /* The book's Everyone part (game.js everySheetHTML, feastPageHTML): all the meadows together, from tally.js. The
+     season's feast is a row as a skill is (the dish's satchel painting for the coin), the best-loved dishes their tiles
+     with how often they were cooked under each. */
+  #book .chip.found { background: rgba(154, 106, 158, 0.13); color: #6e4772; }
+  #book .every-feast .it { display: block; width: 38px; height: 38px; background-image: var(--items); background-repeat: no-repeat;
+    background-size: calc(100% * var(--item-n, 13)) 100%; }
+  #book .every-feast .it.shade { filter: brightness(0); opacity: 0.2; }
+  #book .every-loved { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  #book .every-dish { display: grid; gap: 3px; }
+  #book .every-dish small { text-align: center; color: var(--muted); font-size: 11px; font-weight: 800; }
+  #book .every-caught { margin-bottom: 6px; }
   /* a skill page is a little tighter than a dish's, so its road to opal is in view without a scroll */
   #book .b-page.you-skill .pg-grab { padding-top: 14px; }
   #book .b-page.you-skill .art { height: 104px; margin: 0; }
@@ -2304,6 +2315,7 @@
 <script src="net.js"></script>
 <script src="friends.js"></script>
 <script src="stone.js"></script>
+<script src="tally.js"></script>
 <script src="updates.js"></script>
 <script src="game.js"></script>
 <script>

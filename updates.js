@@ -19,6 +19,16 @@
 
 const UPDATES = [
   {
+    v: '0.12.0', date: '2026-10-23', title: 'All the meadows together',
+    notes: [
+      'A new Everyone page in the book shows what all the meadows did together this week.',
+      'Every autumn foragers everywhere catch fish toward a feast, and when enough are caught, every meadow learns a new recipe.',
+      'Each find and recipe in the book says how many foragers have found it.',
+      'Some mornings tell you how many foragers walked a meadow today.',
+      'The old stone hears what the other meadows are cooking.',
+    ],
+  },
+  {
     v: '0.11.0', date: '2026-10-23', title: 'Treasures from the water',
     notes: [
       'A good angler sometimes fishes up treasures: bottles with secret recipes, a copper pot, a fisher\'s cap and an oilskin cloak.',

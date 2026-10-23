@@ -8,7 +8,7 @@
 // gpt-oss-120b in 0.5 s, wordier; Gemini 3.8 Flash was funnier still but 2-6 s (once 109 s), too slow to wait for.
 // The daily counts are kept in supabase/stone.sql's table (stone_tick); without it, there's no limit but the providers'.
 //
-// It takes { said, offer, ctx, talk, fed } (see stone.js) and answers { say, mood, score } or { error }. What comes back
+// It takes { said, offer, ctx, talk, fed } (see stone.js; ctx.gossip is what the other meadows did this week, game.js tallyGossip) and answers { say, mood, score } or { error }. What comes back
 // from the model is checked and cut down here, so a jailbroken stone can only ever say silly things.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 
@@ -93,6 +93,7 @@ function turnOf(b: any): string {
   const c = b.ctx || {}, lines: string[] = [];
   lines.push(`The meadow now: ${clip(c.season, 20)}, ${clip(c.time, 20)}, ${clip(c.weather, 30)}. Day ${clip(c.day, 6)}.`);
   if (c.forager) lines.push(`The forager is ${clip(c.forager, 120)}.`);
+  if (c.gossip) lines.push(`Gossip blown in from the other meadows: this week ${clip(c.gossip, 160)}. Bring it up only now and then, when it makes a better joke (a copycat, a fad, a dish you'd rather have).`);
   if (Array.isArray(b.fed) && b.fed.length) lines.push(`Offerings you remember: ${b.fed.slice(-12).map((f: any) => `${clip(f.name, 40)} (${+f.score | 0}/10)`).join(', ')}.`);
   if (b.offer) {
     const o = b.offer, [lo, hi] = SCORES[kindOf(o)];
