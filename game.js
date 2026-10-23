@@ -92,6 +92,7 @@ let ctx = wctx;
 const split = { z: -1, ox: 0, oy: 0, ok: false, at: 0, in: false, clear: 0 };   // the meadow as it was last drawn: its zoom, where its corner was
 
 let vw = 0, vh = 0, dpr = 1, minZoom = 1, fitZoom = 1;
+let homeShort = false;   // on the home screen, nothing paints below the window (shortOfScreen)
 const FIT = 0.92;                                 // zoomed right out, how much of the window the meadow fills (it fades into mist, mistField)
 let sheet = null;                                 // the edges of the meadow the inspector and the bars hide, while it's open (or the chat and the keyboard)
 // A phone upright or on its side: slim bars, and the tools fold into a button. On its side (a short screen)
@@ -144,7 +145,8 @@ function shortOfScreen() {
 })();
 
 function resize() {
-  if (shortOfScreen()) document.documentElement.style.setProperty('--home-bar', '0px');
+  homeShort = shortOfScreen();
+  if (homeShort) document.documentElement.style.setProperty('--home-bar', '0px');
   else document.documentElement.style.removeProperty('--home-bar');
   dpr = Math.min(pixelRatio(), saverOn ? SAVER_DPR : 3, SHARP[sharp].most);   // (a phone's own 3x: capped at 2 it's a little soft, so only when battery saver asks)
   // The CSS sizes the canvas: in Safari on a phone it reaches under the clock and the address bar, past innerHeight.
@@ -510,10 +512,34 @@ const themeMeta = $('meta[name="theme-color"]');
 let edgeBase = [156, 199, 126], edgeDark = 0;      // the grass's average by day, and how far the night has laid its navy over it
 function edgeShow() {
   const d = edgeDark, k = i => Math.round(edgeBase[i] * (1 - d) + NIGHT_RGB[i] * d);
-  const css = `rgb(${k(0)}, ${k(1)}, ${k(2)})`;
+  const css = homeShort && footRGB ? `rgb(${footRGB})` : `rgb(${k(0)}, ${k(1)}, ${k(2)})`;
   if (themeMeta.content === css) return;
   themeMeta.content = css;
   document.documentElement.style.background = document.body.style.background = css;
+}
+// On the home screen the strip iOS leaves unpainted is under the meadow's foot, not its average: there, once a
+// second, the last few rows as drawn (the ground and what stands on it, the dark and the weather too) are squeezed
+// into a picture a few pixels wide and read back, and the strip takes their colour. Stepped, so it holds still.
+const FOOT_MS = 1000, FOOT_W = 16, FOOT_ROWS = 6;
+const footPic = document.createElement('canvas');
+footPic.width = FOOT_W; footPic.height = 1;
+const footCtx = footPic.getContext('2d', { willReadFrequently: true });
+let footLook = 0, footRGB = '';
+function edgeFoot(now) {
+  if (!homeShort || now - footLook < FOOT_MS || !vw) return;
+  footLook = now;
+  footCtx.clearRect(0, 0, FOOT_W, 1);
+  const g = groundLayer;
+  if (g && g.style.display !== 'none' && laid.w) {
+    const kx = g.width / laid.w, ky = g.height / laid.h;
+    footCtx.drawImage(g, -laid.x * kx, (vh - FOOT_ROWS - laid.y) * ky, vw * kx, FOOT_ROWS * ky, 0, 0, FOOT_W, 1);
+  }
+  if (!SPLIT) footCtx.drawImage(canvas, 0, canvas.height - FOOT_ROWS * dpr, canvas.width, FOOT_ROWS * dpr, 0, 0, FOOT_W, 1);
+  const px = footCtx.getImageData(0, 0, FOOT_W, 1).data, sum = [0, 0, 0];
+  let a = 0;
+  for (let i = 0; i < px.length; i += 4) { const w = px[i + 3]; a += w; for (let k = 0; k < 3; k++) sum[k] += px[i + k] * w; }
+  footRGB = a < 255 ? '' : sum.map(v => Math.min(255, Math.round(v / a / 3) * 3)).join(', ');
+  edgeShow();
 }
 function edgeColour(r, g, b) { edgeBase = [r, g, b]; edgeShow(); }
 function edgeNight(dark) {                          // at dusk and dawn, in steps, so the bars follow the dark without a style pass each second
@@ -19726,6 +19752,7 @@ function updateClock() {
   const ck = S.clock(world);
   updateFavicon(ck);
   edgeNight(darkness(ck.phase));
+  edgeFoot(performance.now());
   dialWords(ck);
 }
 

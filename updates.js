@@ -19,6 +19,12 @@
 
 const UPDATES = [
   {
+    v: '0.12.4', date: '2026-10-23', title: 'Fixes',
+    notes: [
+      'On an iPhone home screen, the strip at the foot of the screen now takes the colour of the meadow just above it.',
+    ],
+  },
+  {
     v: '0.12.3', date: '2026-10-23', title: 'Fixes',
     notes: [
       'A dish in your hands now says so over the satchel: tap yourself to eat it or put it away.',
