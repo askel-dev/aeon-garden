@@ -309,7 +309,7 @@ function paintedSprite(emoji, px, tint, leaf, center) {
   }
   const t0 = performance.now();
   const size = Math.ceil(px * 1.3 * dpr);
-  if (spriteCache.size > 2000 || spriteBytes + size * size * 4 > SPRITE_BYTES) dropSprites(size * size * 4);
+  if (spriteCache.size > 2000 || spriteBytes + size * size * 4 > SPRITE_BYTES) dropSprites();
   spriteBytes += size * size * 4;
   const c = document.createElement('canvas');
   c.width = c.height = size;
@@ -353,43 +353,22 @@ function paintedSprite(emoji, px, tint, leaf, center) {
   paintedMs += performance.now() - t0;
   return s;
 }
-// A full cache lets go of the sprites not drawn in the last few frames (other zooms, looks gone
-// by), so the ones on screen aren't all painted again at once. The forager's paintings at the size it's drawn stay too
-// (keptForager): they're its walk, a frame or two from being drawn, and let go after a zoom they came back one by one
-// as it walked, and it stuck in a pose till each had. Only if that isn't enough does it start again from empty.
-// Only the set in use is kept: warm, or cold (fur.js FORAGER_COLD), so the cold paintings don't double what's held.
-// The emotes' only while one is on, and carrying a dish's while one's in its hand.
-const keptForager = s => s.look.startsWith('forager:') && (s.px === fg.sized || s.px === furPainted(fg.sized)) && keptPose(parseInt(s.look.slice(8)));
-function keptPose(n) {
-  if (n >= Fur.SIT_AT) return !!fireSit.seat && (n - Fur.SIT_AT >> 3) === fg.snowArt * Fur.FORAGER_OUTFITS.length + fg.outfit;
-  if (n >= Fur.FISH_AT) return fishing() && (n - Fur.FISH_AT >> 4) === fg.snowArt * Fur.FORAGER_OUTFITS.length + fg.outfit;
-  if (n === Fur.MITT_ART) return fg.carry || fishing();
-  if (n >= Fur.CARRY_AT) { n -= Fur.CARRY_AT; if (!fg.carry) return false; }
-  else if (n >= Fur.EMOTE_AT) return fg.emote >= 0 && (n - Fur.EMOTE_AT >> 5) === fg.snowArt * Fur.FORAGER_OUTFITS.length + fg.outfit;
-  else if (fg.carry && (n & 127) < KNEEL_AT) return false;      // (a dish in its hands, it walks the carry's walk)
-  return !(fg.cold ? WARM_ONLY : COLD_ONLY)[n & 127] && Math.floor(n / Fur.FORAGER_SNOW_ARTS) === fg.snowArt;
-}
-function dropSprites(need) {
+// A full cache lets go of the sprites not drawn in the last few frames (other zooms, looks gone by), so the ones on
+// screen aren't all painted again at once. The forager's paintings for what it's doing now stay too, the ones it asked
+// for ahead (foragerKeep): they're its walk, a frame or two from being drawn. Close up its set is near the whole of
+// SPRITE_BYTES (0.7 MB a painting, over a hundred of them), and letting any of it go, or starting again from empty, had
+// it stand stuck in an old pose while each came back and pushed the cache over again. So it never goes, nor a friend's
+// while it's on screen (p.keep, drawPeers), and what's left past here is all drawn this moment: the cache holds a little
+// more than SPRITE_BYTES for a while rather than paint it all again.
+const friendKeeps = key => { for (const p of peers.values()) if (p.shown && p.keep.has(key)) return true; return false; };
+function dropSprites() {
   for (const [key, s] of spriteCache) {
-    if (spriteFrame - s.used < 3 || keptForager(s)) continue;
+    if (spriteFrame - s.used < 3 || foragerKeep.has(key) || peers.size && s.look.startsWith('forager:') && friendKeeps(key)) continue;
     spriteBytes -= s.canvas.width * s.canvas.height * 4;
     freeImage(s.canvas);
     spriteCache.delete(key);
     if (latestLook.get(s.look) === s) latestLook.delete(s.look);
   }
-  if (spriteCache.size <= 2000 && spriteBytes + need <= SPRITE_BYTES) return;
-  // Then the forager's not drawn in the last few frames too: they come back as it needs them. Starting again from empty
-  // here let its whole walk go each time one of them came back, and it stuck in a pose for good.
-  for (const [key, s] of spriteCache) {
-    if (spriteFrame - s.used < 3) continue;
-    spriteBytes -= s.canvas.width * s.canvas.height * 4;
-    freeImage(s.canvas);
-    spriteCache.delete(key);
-    if (latestLook.get(s.look) === s) latestLook.delete(s.look);
-  }
-  if (spriteCache.size <= 2000 && spriteBytes + need <= SPRITE_BYTES) return;
-  for (const s of spriteCache.values()) freeImage(s.canvas);
-  spriteCache.clear(); latestLook.clear(); spriteBytes = 0;
 }
 
 const SNOW_RGB = [244, 248, 252];
@@ -2151,12 +2130,6 @@ const FORAGER_ARTS = Array.from({ length: Fur.SIT_AT + Fur.FORAGER_SIT_ARTS }, (
 const OUTFIT = 'aeon-garden-outfit', HAT = 'aeon-garden-hat';   // in localStorage: the cloak and the hat, by their place in fur.js's lists
 const FORAGER_POSES = [0, 1, 2, 3, 4, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23];
 const FORAGER_CHILLY = [...FORAGER_POSES, ...Fur.FORAGER_COLD];   // (chilly, the cold ones are asked for ahead too)
-const WARM_ONLY = new Uint8Array(128), COLD_ONLY = new Uint8Array(128);   // paintings the other set never uses (keptForager), by (view << 5) + pose
-for (let v = 0; v < 3; v++) {
-  for (const p of [0, 1, 2, 8, 9, 10, 11, 12, 13, 14, 15]) WARM_ONLY[(v << 5) + p] = 1;
-  for (const p of Fur.FORAGER_COLD) COLD_ONLY[(v << 5) + p] = 1;
-}
-for (const p of Fur.FORAGER_IDLES) WARM_ONLY[96 + p] = 1;
 const FORAGER_SAD = 2;                     // from this stage (sim.js warmthStage: cold) it hugs itself, sad (fur.js FORAGER_COLD)
 const FORAGER_TURN_MS = 1100;              // standing this long, it turns to face you
 const FORAGER_JOG = [0.1, 0.11];           // sent running, it jogs once up past this pace (tiles a tick) and walks again under
@@ -2931,6 +2904,7 @@ function drawFigure(b, art, sx, sy, px, now, stage, trip, still, me) {
   const rot = (trip && b.view !== 1 ? (flip ? 1 : -1) * 0.24 * trip : 0) + (b.lean || 0);   // (a stumble pitching forward, a dash leaning into it)
   b.fs = squash; b.fk = shake; b.fr = rot;                // (how it's laid: its dish and mittens go with it, drawHeldDish)
   if (me) { b.rimOn = true; b.fx = sx; b.fy = sy; }       // (where its painting sits, as it's about to be drawn: its rim is laid over the dark from here, drawForagerRim)
+  else { b.figX = sx; b.figY = sy; }                    // (a friend's: cut out of that rim where it stands in front, rimCut)
   if (rot || shake) {                                   // (a shiver sways it about its feet: the head most, the feet not at all)
     ctx.save(); ctx.translate(sx, sy);
     if (shake) ctx.transform(1, 0, -shake / 0.6, 1, 0, 0);
@@ -2989,14 +2963,22 @@ function foragerRim(art, px) {
   asBitmap(c, b => { if (rims.get(art) === r) r.canvas = b; });
   return r;
 }
-// How much of its head what stands in front of it that isn't a crown hides (a rock, a rack, a torch, a friend): the items
-// nearer the camera than it and tall enough (standsUp) to reach over its head, within their width of it.
+// How much of its head what stands in front of it that isn't a crown hides (a rock, a rack, a torch): the items
+// nearer the camera than it and tall enough (standsUp) to reach over its head, within their width of it. A friend in front
+// isn't counted: it's cut out of the rim by its own outline (rimFront, drawForagerRim), as it may hide the shoulders and not the head.
+const rimFront = [];
 function rimHidden(items) {
   const px = fg.px, fx = fg.fx, head = fg.fy - px * 0.62, y = world.forager.y, z = cam.zoom;
   let most = 0;
+  rimFront.length = 0;
   for (let i = 0; i < items.length; i++) {
     const it = items[i];
     if (it.p || it.y <= y || it.f < 0.02) continue;
+    if (it.q) {                                         // (drawn on its feet this frame, by drawFigure, and near enough to overlap)
+      const q = it.q;
+      if (!zoomedOut() && q.stage !== 4 && !q.wet && Math.abs(q.figX - fx) < px * 0.8 && Math.abs(q.figY - fg.fy) < px) rimFront.push(q);
+      continue;
+    }
     const h = standsUp(it, z, px);
     if (h < 0.5) continue;
     const reach = (0.2 + 0.5 * h) * px, side = Math.abs(it.sx - fx);
@@ -3018,6 +3000,7 @@ function drawForagerRim(dark, occl = true, dx = 0, dy = 0, hid = 0) {
   if (!s) return;
   const seen = (occl ? 1 - coverAt(fg.fx, fg.fy - px * 0.3, world.forager.y) : 1) * (1 - hid) * fireReach(fg.fx, fg.fy, dx, dy);
   if (seen < 0.02) return;
+  const img = occl && rimFront.length ? rimCut(r.canvas, s.size, px) : r.canvas;
   ctx.globalAlpha = RIM_A * clamp(dark / DARK, 0, 1) * seen;
   ctx.save();
   ctx.translate(fg.fx, fg.fy);
@@ -3025,30 +3008,67 @@ function drawForagerRim(dark, occl = true, dx = 0, dy = 0, hid = 0) {
   if (fg.fr) ctx.rotate(fg.fr);
   ctx.translate(0, -px * 0.36 * fg.fs);
   ctx.scale(fg.flip ? -1 : 1, fg.fs);
-  ctx.drawImage(r.canvas, -s.size / 2, -s.size / 2, s.size, s.size);
+  ctx.drawImage(img, -s.size / 2, -s.size / 2, s.size, s.size);
   ctx.restore();
   ctx.globalAlpha = 1;
 }
+// Where a figure's painting (b: fg or a friend, as drawFigure laid it) goes on the meadow: from its box, size across, to
+// the screen. Made only while a friend stands in front of the forager (rimCut).
+function figureAt(b, x, y, px, size) {
+  const m = new DOMMatrix().translateSelf(x, y);
+  if (b.fk) m.multiplySelf(new DOMMatrix([1, 0, -b.fk / 0.6, 1, 0, 0]));
+  if (b.fr) m.rotateSelf(b.fr * 180 / Math.PI);
+  return m.translateSelf(0, -px * 0.36 * b.fs).scaleSelf(b.flip ? -1 : 1, b.fs).translateSelf(-size / 2, -size / 2);
+}
+// The rim with the friends standing in front of the forager (rimFront) cut out by their outlines, on a canvas of the rim's
+// own size (at most RIM_MOST), kept and used again.
+let RIM_CUT = null;
+function rimCut(rim, size, px) {
+  const n = rim.width;
+  if (!RIM_CUT) RIM_CUT = document.createElement('canvas').getContext('2d');
+  const g = RIM_CUT, c = g.canvas;
+  if (c.width !== n) c.width = c.height = n; else { g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, n, n); }
+  g.drawImage(rim, 0, 0);
+  g.globalCompositeOperation = 'destination-out';
+  const back = figureAt(fg, fg.fx, fg.fy, px, size).scaleSelf(size / n).invertSelf();   // (the meadow back to the rim's pixels)
+  for (const q of rimFront) {
+    const s = sprite(q.art, px);
+    if (!spriteReady(q.art, px)) continue;
+    g.setTransform(back.multiply(figureAt(q, q.figX, q.figY, px, s.size)));
+    g.drawImage(s.canvas, 0, 0, s.size, s.size);
+  }
+  g.globalCompositeOperation = 'source-over';
+  return c;
+}
 // Each of its paintings at the size it's drawn, asked of the worker ahead, so the walk never waits for one. Its kneeling
-// ones too once there's a fire about, or what one takes is in the satchel.
+// ones too once there's a fire about, or what one takes is in the satchel. Those are kept (foragerKeep, dropSprites)
+// till what it's doing changes: by key, the painting asked for and, where that's the size above, the one shrunk from it.
+const foragerKeep = new Set();
+function keepForager(art, P, keep = foragerKeep) {
+  keep.add(P + '|' + art + '||');
+  const painted = furPainted(P);
+  if (painted !== P) keep.add(painted + '|' + art + '||');
+  if (furWorker) furReady(art, P);
+}
 function foragerAhead() {
   const P = poseStep(Math.max(4, forPx())), set = S.warmthStage(world.forager) >= 1 ? 2 : 1;   // (chilly: the cold ones too)
   const kneel = world.fires.length > 0 || !!ui.fire || !!ui.place || buildUi.ready, emo = fg.emote >= 0, carry = !!world.forager.hand || !!heldItem();
   const rod = fishing() || (holdsRod() && !carry);   // (the rod in its hands, or fishing)
-  if (!furWorker || P === fg.sized && set === fg.sizedSet && fg.snowArt === fg.sizedSnow && kneel === fg.sizedKneel && emo === fg.sizedEmote && carry === fg.sizedCarry && rod === fg.sizedFish) return;
+  if (P === fg.sized && set === fg.sizedSet && fg.snowArt === fg.sizedSnow && kneel === fg.sizedKneel && emo === fg.sizedEmote && carry === fg.sizedCarry && rod === fg.sizedFish) return;
   fg.sized = P; fg.sizedSet = set; fg.sizedSnow = fg.snowArt; fg.sizedKneel = kneel; fg.sizedEmote = emo; fg.sizedCarry = carry; fg.sizedFish = rod;
+  foragerKeep.clear();
   const at = fg.snowArt * Fur.FORAGER_SNOW_ARTS + (fg.outfit << 7);
   const close = cam.zoom > CLOSE_ZOOM;                   // (close up it stands, kneels or sits: not its walk)
-  if (!close && !carry) for (let v = 0; v < 3; v++) for (const p of set === 2 ? FORAGER_CHILLY : FORAGER_POSES) furReady(FORAGER_ARTS[at + (v << 5) + p], P);
-  for (const p of Fur.FORAGER_IDLES) furReady(FORAGER_ARTS[at + 96 + p], P);
-  for (const p of Fur.FORAGER_EATS) furReady(FORAGER_ARTS[at + 96 + p], P);
-  if (kneel) for (const p of KNEEL_POSES) furReady(FORAGER_ARTS[at + KNEEL_AT + p], P);
-  if (kneel) for (const p of Fur.FORAGER_SIT_EATS) furReady(FORAGER_ARTS[at + KNEEL_AT + p], P);   // (eating sitting, on the seat log or by the fire)
-  if (kneel && mySeats().length) for (const k of Object.values(Fur.FORAGER_SIT)) furReady(FORAGER_ARTS[Fur.sitArt(fg.snowArt, fg.outfit, k)], P);   // (sitting on a log facing left, right or away)
-  if (emo) for (const p of Fur.FORAGER_EMOTES) furReady(FORAGER_ARTS[Fur.emoteArt(fg.snowArt, fg.outfit, p)], P);   // (an emote on, or about to be)
-  if (carry && !close) for (let v = 0; v < 3; v++) for (const p of set === 2 ? FORAGER_CHILLY : FORAGER_POSES) furReady(FORAGER_ARTS[Fur.carryArt(fg.snowArt, fg.outfit, (v << 5) + p)], P);   // (a dish in its hands)
-  if (carry || rod) furReady(FORAGER_ARTS[Fur.MITT_ART], P);   // (and its mittens over it, or over the rod)
-  if (rod) for (let vp = 0; vp < FISH_VPS; vp++) furReady(FORAGER_ARTS[Fur.fishArt(fg.snowArt, fg.outfit, vp)], P);   // (the rod in its hands)
+  if (!close && !carry) for (let v = 0; v < 3; v++) for (const p of set === 2 ? FORAGER_CHILLY : FORAGER_POSES) keepForager(FORAGER_ARTS[at + (v << 5) + p], P);
+  for (const p of Fur.FORAGER_IDLES) keepForager(FORAGER_ARTS[at + 96 + p], P);
+  for (const p of Fur.FORAGER_EATS) keepForager(FORAGER_ARTS[at + 96 + p], P);
+  if (kneel) for (const p of KNEEL_POSES) keepForager(FORAGER_ARTS[at + KNEEL_AT + p], P);
+  if (kneel) for (const p of Fur.FORAGER_SIT_EATS) keepForager(FORAGER_ARTS[at + KNEEL_AT + p], P);   // (eating sitting, on the seat log or by the fire)
+  if (kneel && mySeats().length) for (const k of Object.values(Fur.FORAGER_SIT)) keepForager(FORAGER_ARTS[Fur.sitArt(fg.snowArt, fg.outfit, k)], P);   // (sitting on a log facing left, right or away)
+  if (emo) for (const p of Fur.FORAGER_EMOTES) keepForager(FORAGER_ARTS[Fur.emoteArt(fg.snowArt, fg.outfit, p)], P);   // (an emote on, or about to be)
+  if (carry && !close) for (let v = 0; v < 3; v++) for (const p of set === 2 ? FORAGER_CHILLY : FORAGER_POSES) keepForager(FORAGER_ARTS[Fur.carryArt(fg.snowArt, fg.outfit, (v << 5) + p)], P);   // (a dish in its hands)
+  if (carry || rod) keepForager(FORAGER_ARTS[Fur.MITT_ART], P);   // (and its mittens over it, or over the rod)
+  if (rod) for (let vp = 0; vp < FISH_VPS; vp++) keepForager(FORAGER_ARTS[Fur.fishArt(fg.snowArt, fg.outfit, vp)], P);   // (the rod in its hands)
 }
 // Out while it snows, snow gathers on it (on the hood, the shoulders: fur.js FORAGER_SNOWS), less under the trees; once
 // it stops it melts off, soon above freezing, slowly under, quicker on the move, and by a fire close by it goes snowing or
@@ -16592,7 +16612,7 @@ if (window.Worker && window.OffscreenCanvas) {
       if (!image) { furWorker = null; return; }  // it can't paint there: they're painted here, as before
       if (spriteCache.has(key)) { image.close(); return; }   // (painted here meanwhile)
       const bytes = image.width * image.height * 4;
-      if (spriteCache.size > 2000 || spriteBytes + bytes > SPRITE_BYTES) dropSprites(bytes);
+      if (spriteCache.size > 2000 || spriteBytes + bytes > SPRITE_BYTES) dropSprites();
       spriteBytes += bytes;
       const s = { canvas: image, size: image.width / job.dpr, px: job.px, look: job.look, used: spriteFrame };
       spriteCache.set(key, s); latestLook.set(job.look, s);
@@ -21595,13 +21615,13 @@ function heardPos(m, now) {
       art: FORAGER_ARTS[0], sized: 0, sizedSet: 0, sizedSnow: 0, name: '', nameArt: null, sx: -0, sy: -0, shown: false, chat: null, kneel: -1,
       handIx: -1, handArt: null, handWarm: false, handBig: 1,   // (the dish in its hand, or what's in the slot in its hands: heardPos)
       holdId: '', holdRod: false, rest: false, rodWalk: false,   // (that slot's thing; the rod in it: held out standing, over its shoulder walking)
-      carry: false, carryShown: false, carryVp: 0, sizedCarry: -1, dishY: -0, dishV: -0, fs: 1, fk: -0, fr: -0,   // (held out in both hands: drawHeldDish; how its figure was laid, drawFigure)
+      carry: false, carryShown: false, carryVp: 0, sizedCarry: -1, dishY: -0, dishV: -0, fs: 1, fk: -0, fr: -0, figX: -0, figY: -0,   // (held out in both hands: drawHeldDish; how and where on screen its figure was laid, drawFigure)
       mark: -0,                                            // (how far its marker at the screen's edge has faded in: drawFriendMarks)
       emote: -1, emoteMs: -0, emoteFrame: -1, lift: -0, sitDx: -0, sizedEmote: -1,
       lead: '',                                            // (the friend it has on a rope, or us: heardLead)
       swingAt: -1e9, swingDir: -0, hitAt: -1e9, hp: 1, swatAt: -1e9, tossHitAt: -1e9,   // (friendly fire: swing; the health pips over its head; when its last hit on us was taken, hitFrom)
       jumpAt: -1e9, jumpMs: -0, jx: -0, jy: -0, jdx: -0, jdy: -0, jhop: -0, air: -0,   // (a dash: peerJump)
-      line: lineOf(), fishShown: false, fishVp: 0, sizedFish: -1, sizedSit: -1, sitQ: null };   // (its line out: heardLine; whether its painting holds the rod, as fg's)   // (an emote, as it said: EMOTE, emoteStill)
+      line: lineOf(), fishShown: false, fishVp: 0, sizedFish: -1, sizedSit: -1, sitQ: null, keep: new Set() };   // (its line out: heardLine; whether its painting holds the rod, as fg's)   // (an emote, as it said: EMOTE, emoteStill)
     peers.set(m.from, p);
     p.name = cleanName(m.n);
     if (Net.host || m.tick < 0) toast(`🧺 ${friendName(p) || 'A friend'} has come into the meadow`);   // (a guest knows the host is there)
@@ -22029,17 +22049,17 @@ function peerItems(items, now, z) {
     if (p.stage === 4) { pose = 7; idleStop(p); }
     p.fall = p.downAt ? clamp((now - p.downAt) / FALL_MS, 0, 1) : 0;
     const set = p.stage >= 1 ? 2 : 1, at = p.snowArt * Fur.FORAGER_SNOW_ARTS + (p.outfit << 7);   // (its paintings asked for ahead, as foragerAhead does the player's)
-    if (furWorker && (p.sized !== P || p.sizedSet !== set || p.sizedSnow !== p.snowArt)) {
-      p.sized = P; p.sizedSet = set; p.sizedSnow = p.snowArt;
-      for (let v = 0; v < 3; v++) for (const q of set === 2 ? FORAGER_CHILLY : FORAGER_POSES) furReady(FORAGER_ARTS[at + (v << 5) + q], P);
-      for (const q of Fur.FORAGER_IDLES) furReady(FORAGER_ARTS[at + 96 + q], P);
+    if (p.sized !== P || p.sizedSet !== set || p.sizedSnow !== p.snowArt) {   // (kept as ours are while it's on screen: dropSprites)
+      p.sized = P; p.sizedSet = set; p.sizedSnow = p.snowArt; p.keep.clear(); p.sizedEmote = p.sizedFish = p.sizedCarry = p.sizedSit = -1;
+      for (let v = 0; v < 3; v++) for (const q of set === 2 ? FORAGER_CHILLY : FORAGER_POSES) keepForager(FORAGER_ARTS[at + (v << 5) + q], P, p.keep);
+      for (const q of Fur.FORAGER_IDLES) keepForager(FORAGER_ARTS[at + 96 + q], P, p.keep);
     }
-    if (furWorker && p.emote >= 0 && p.sizedEmote !== P) { p.sizedEmote = P; for (const q of Fur.FORAGER_EMOTES) furReady(FORAGER_ARTS[Fur.emoteArt(p.snowArt, p.outfit, q)], P); }
+    if (p.emote >= 0 && p.sizedEmote !== P) { p.sizedEmote = P; for (const q of Fur.FORAGER_EMOTES) keepForager(FORAGER_ARTS[Fur.emoteArt(p.snowArt, p.outfit, q)], P, p.keep); }
     const fishPose = pose < 0 || p.rest && p.line.log ? anglePose(now, p.line, p.blinkAt) : p.rest && p.stage < 4 ? (now - p.blinkAt < 150 ? Fur.FORAGER_FISH.blink : Fur.FORAGER_FISH.hold) : -1;
     if (fishPose >= 0) { if (now - p.blinkAt > 4000) p.blinkAt = now - Math.random() * 1500; pose = 0; }
-    if (furWorker && fishPose >= 0 && p.sizedFish !== P) { p.sizedFish = P; for (let vp = 0; vp < FISH_VPS; vp++) furReady(FORAGER_ARTS[Fur.fishArt(p.snowArt, p.outfit, vp)], P); furReady(FORAGER_ARTS[Fur.MITT_ART], P); }
-    if (furWorker && carry && p.sizedCarry !== P) { p.sizedCarry = P; for (let v = 0; v < 3; v++) for (const q of set === 2 ? FORAGER_CHILLY : FORAGER_POSES) furReady(FORAGER_ARTS[Fur.carryArt(p.snowArt, p.outfit, (v << 5) + q)], P); furReady(FORAGER_ARTS[Fur.MITT_ART], P); }
-    if (furWorker && psf && p.sizedSit !== P) { p.sizedSit = P; for (const k of Object.values(Fur.FORAGER_SIT)) furReady(FORAGER_ARTS[Fur.sitArt(p.snowArt, p.outfit, k)], P); }
+    if (fishPose >= 0 && p.sizedFish !== P) { p.sizedFish = P; for (let vp = 0; vp < FISH_VPS; vp++) keepForager(FORAGER_ARTS[Fur.fishArt(p.snowArt, p.outfit, vp)], P, p.keep); keepForager(FORAGER_ARTS[Fur.MITT_ART], P, p.keep); }
+    if (carry && p.sizedCarry !== P) { p.sizedCarry = P; for (let v = 0; v < 3; v++) for (const q of set === 2 ? FORAGER_CHILLY : FORAGER_POSES) keepForager(FORAGER_ARTS[Fur.carryArt(p.snowArt, p.outfit, (v << 5) + q)], P, p.keep); keepForager(FORAGER_ARTS[Fur.MITT_ART], P, p.keep); }
+    if (psf && p.sizedSit !== P) { p.sizedSit = P; for (const k of Object.values(Fur.FORAGER_SIT)) keepForager(FORAGER_ARTS[Fur.sitArt(p.snowArt, p.outfit, k)], P, p.keep); }
     const carried = carry && emo < 0 && pose < 32;
     const fvp = fishVp(p.view, fishPose);
     const want = FORAGER_ARTS[emo >= 0 && p.stage < 4 ? Fur.emoteArt(p.snowArt, p.outfit, emo) : carried ? Fur.carryArt(p.snowArt, p.outfit, poseKey(p.view, pose))
@@ -23923,7 +23943,14 @@ const calm = now => ui.speed === 1 && camStill && !drag && !pinch && !zoomTo && 
 // so what stands still keeps its place among them from frame to frame. Safari draws a sprite snapped to the nearest
 // pixel: with the camera in between, a stone went 2, 4, 2 pixels a frame over a ground sliding evenly by fractions
 // (ground.js slides it by exactly what the camera moved), and everything on the ground jittered against it.
+// But not while the zoom moves: the corner then drifts by a fraction a frame, and snapped it was half a pixel one way, then
+// the other, and the whole meadow shook back and forth (the fishing camera's slow settle in: fishCam). Unsnapped, each
+// thing only goes on its own way, a pixel at a time.
+let pixelZoom = 0;
 function pixelCam() {
+  const zoomed = cam.zoom !== pixelZoom;
+  pixelZoom = cam.zoom;
+  if (zoomed) return;
   const k = cam.zoom * dpr, hx = vw / 2 * dpr, hy = vh / 2 * dpr;
   cam.x = (hx - Math.round(hx - cam.x * k)) / k;
   cam.y = (hy - Math.round(hy - cam.y * k)) / k;

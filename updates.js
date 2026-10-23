@@ -19,6 +19,12 @@
 
 const UPDATES = [
   {
+    v: '0.12.1', date: '2026-10-23', title: 'Fixes',
+    notes: [
+      'Your forager, and friends, no longer get stuck in one pose while walking.',
+    ],
+  },
+  {
     v: '0.12.0', date: '2026-10-23', title: 'All the meadows together',
     notes: [
       'A new Everyone page in the book shows what all the meadows did together this week.',

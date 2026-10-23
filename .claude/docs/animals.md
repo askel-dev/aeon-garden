@@ -21,7 +21,7 @@ is costly (each pass through the scratch layer is a flush), so parts can share o
 just shaded (`flat`). It's painted only at doublings of its size (`FUR_PAINTED`) and shrunk for the sizes between,
 which keeps a dozen poses, growing young and zooming cheap. Close up it's painted at one size, `FUR_MOST` screen pixels,
 and stretched past it (`furTop`): the forager's 57 paintings at the doubling above were more than the whole sprite cache,
-and a full cache never lets go of the forager's set at the size it's drawn (`keptForager`), or its walk sticks after a zoom. In the meadow the paintings are made off the main thread
+and a full cache never lets go of the paintings the forager asked for ahead for what it's doing now (`foragerKeep`, `foragerAhead`), nor a friend's on screen (`p.keep`): letting any of them go, or emptying the cache, had it stand stuck in a pose as each came back and filled the cache again (2026-10-23). Past them the cache would rather run a little over `SPRITE_BYTES` than paint what's on screen again. In the meadow the paintings are made off the main thread
 (fur-worker.js, which loads fur.js; game.js `furReady` asks for them, and shrinking is done on the page once what it's
 made from has come). Till a pose comes the animal holds the one it was last drawn in (`shownPose`), or the same at another size or one of its kin stands in (`furKin`), and each look about the
 screen is asked for ahead (`furAhead`), so only the first of a look is painted on the page. Without a worker (no
