@@ -2,7 +2,7 @@
 
 ## game.js
 
-Gathering: a click or a tap on something to gather (`gatherAt`: a hive, a clump of mushrooms, a wild find, a bramble, nettles, a fruit or mast
+Gathering (a tree with nothing to give is a target only at its trunk, so a click up its crown walks on: 2026-10-24): a click or a tap on something to gather (`gatherAt`: a hive, a clump of mushrooms, a wild find, a bramble, nettles, a fruit or mast
 tree, the garlic, looked for only near the point, the trees through the sim's grid) walks the forager to its near side a reach
 away, in front of a tree, a hive or a bramble so it isn't hidden (`goGather`, `standPoint`, `gatherSpot`), and once it's there
 (`gatherFrame`) it turns to it, stoops and reaches down (fur.js poses 3 and 4, `fg.pick`, `PICK_MS`), sim.js `gather` takes it, a
@@ -36,7 +36,10 @@ something to pick (`nearPick`, within `NEAR_REACH`); the camp's fire is in it fr
 nothing is nearer. The
 same answer puts the disc over a fire in reach and over the stone, and the E in the line over the satchel on a keyboard, so
 what's shown is what E does (2026-10-20: the fire used to win anywhere in camp, taking E from the basket and from what lay at the
-forager's feet). Pressed again while it's busy picking, the next nearest lines up (`pickNear`); with nothing in reach it says so.
+forager's feet). Pressed again while it's busy picking, the next nearest lines up (`pickNear`); with nothing in reach it says so. While the
+first things' line being worked on asks for something (its `want`: sticks, pebbles, tinder; `taskWants`), a pick of that in reach
+wins over anything nearer (`nearPick`), and the edge arrow points to the nearest of it, not the nearest food (`drawGlints`;
+2026-10-24: "Pick up sticks" was answered with garlic, and the arrow never showed while dandelions were on screen).
 A fire's cooking card shuts with E, as a basket's card does, when one is open.
 E walks to a lit fire within `PROMPT_NEAR` (`cookFire`) and opens its cooking card as a click on the fire does, and shuts it
 again. The moment it takes
@@ -67,7 +70,7 @@ the nearest leaves it, a brass point on it turned that way and the thing's satch
 bitmap, `drawPickArrow`), and fades as one comes into view. It was too easy to miss when small and still, so it pops in a
 little bigger (`ARROW_POP`), nudges toward the thing, and sends a soft honey ring out every `ARROW_PING` (`RING_ART`). It keeps clear of the watch, the pill and the satchel by their places,
 looked at once a second (`KEEP_CLEAR`). Once there's a camp, the same disc with a little campfire in it (`CAMPMARK_ART`) always
-points home while the camp is off screen (`drawCampMark`, `campMark`), calm (a slow warm glow, no pop or rings). Playing together,
+points home while the camp is off screen (`drawCampMark`, `campMark`; before there's a camp, to the first fire laid), calm (a slow warm glow, no pop or rings). Playing together,
 each friend off screen has one too (`drawFriendMarks`): its forager's face in it (its standing painting from the front at one size,
 `FRIEND_FACE`: its cloak, sad when it's cold, eyes shut when it's down) and its name under it (over it on the foot). All find their
 spot with `edgeAt` and slide along the edge out from under the ones laid before them (`edgeApart`: home, friends, then the pick

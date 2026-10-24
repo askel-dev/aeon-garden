@@ -235,3 +235,8 @@ store as that id, and recipes.js `recipeOf`, `foodOf` (the name, fill and `warmt
 `DISH_IX`, `ITEM_ART`, `itemIx` all see the dish under its grade. The card names it with how each step went (`.ct-marks`,
 `GRADED_MS` longer), a perfect one gold (sound.js `dish` with `grade`, two more bells; `PERFECT_PRACTICE`); `f.best` keeps the
 best for the book (`bestChip`), and eating it says so ("Mm. Just right", "A bit smoky. Still good").
+
+At the fire itself the forager kneels well to one side, under a corner of the HUD at this zoom: `measureCook` lowers the aim or
+comes a little further out till its hat (`COOK_HAT`) clears the top row (`hudOver`). The side card on the left keeps clear of the
+first things' note, short of the pot (`layNear`). The roasting stick, griddle, stone and bowl say where things go and what
+they do in their own words (`VESSEL_INTO`, `VESSEL_BUSY`), not the pot's.

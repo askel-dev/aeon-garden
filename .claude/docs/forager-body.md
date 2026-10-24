@@ -58,7 +58,10 @@ rain (`DRY`, faster warm, in sun, moving). Sprinting spends stamina (`SPRINT_TIC
 (`REST_TICKS`, slower cold); spent it's `winded` till `WINDED_BACK`. Stages (`warmthStage`, `WARMTH_STAGES`): cosy, chilly, cold
 (slower, `COLD_PACE`, `bodyPace`), freezing (slower, stumbles, `STUMBLE_*`, hashed from the tick, no random numbers), and at 0
 it collapses (`f.down`, event 'collapse'), waking at `f.homeX`, `f.homeY` (where it started; the camp later) the next morning
-(`WAKE_PHASE`, at least `DOWN_TICKS` on: `wakeForager`, event 'woke') chilly, dry, rested, the satchel empty. Standing still
+(`WAKE_PHASE`, at least `DOWN_TICKS` on: `wakeForager`, event 'woke') chilly, dry, rested, the satchel empty. In the opening gale
+(2026-10-24, a playtest collapsed twice before the first fire and lost all it had gathered each time) it's gentler: it wakes
+cosy (`OPENING_WAKE`), keeps the satchel (event 'woke' with `kept`; game.js `bodyWoke` says so), and wakes beside a fire it
+laid but hasn't lit. Picking an outfit in the gale holds the clock (game.js `outfitHolds`; alone only). Standing still
 from full warmth at dusk (4 seeds): a summer night ends cosy or chilly, a spring or autumn one anywhere from chilly to
 collapsed (rain makes it worse), a winter one kills.
 The opening (PLAN.md stage 3): a new meadow opens on day 4 of spring (`START_DAY`) late in the afternoon (`START_PHASE`, just

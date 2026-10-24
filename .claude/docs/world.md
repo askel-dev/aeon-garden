@@ -86,6 +86,6 @@ The meadow is kept in the browser when the page is hidden or closed (`keepMeadow
 and the reload opened a new meadow, intro and all), so it's also kept at `beforeunload`. The next visit opens it where it was
 (`resumeWorld`): the bare address the one watched last, a `?seed=` link its own. A kept meadow that won't open, or broke
 the page the last time it opened (`OPENING`), is let go. The ••• menu shares the link (a phone's share sheet) and takes
-ideas (the `#ask` card, also once by itself two minutes of play after the first dish is cooked: `askTick`). Visits are counted by GoatCounter
+ideas (the `#ask` card, also once by itself two minutes of play after the first dish is cooked, once the first things are on their last chapter and nothing else is up, without taking the keys: `askTick`). Visits are counted by GoatCounter
 (`COUNTER`: cryptoler.goatcounter.com, no cookies), all as the page `/meadow` whatever the seed, and a link posted with
 `?ref=reddit` says where they came from.

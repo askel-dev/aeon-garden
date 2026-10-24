@@ -19,6 +19,22 @@
 
 const UPDATES = [
   {
+    v: '0.13.1', date: '2026-10-24', title: 'An easier first night',
+    notes: [
+      'Collapsing in the first storm no longer empties your satchel, and you wake warm beside the fire you laid.',
+      'The clock waits while you pick your outfit in the first storm.',
+      'Birch bark now lies under the birches near where you start.',
+      'While the guide asks for sticks, pebbles or tinder, E picks those first and the arrow at the edge points to them.',
+      'The marker at the edge of the screen points to your fire before it is lit, too.',
+      'A campfire placed where it can\'t go moves to the nearest spot that works.',
+      'Trees fade more when you walk behind them, and a click high on a tree with nothing to pick walks you there instead.',
+      'In the cooking close-up the card keeps clear of the guide, and your hat stays clear of the top of the screen.',
+      'The ideas card waits until the guide is nearly done, and no longer takes your keys.',
+      'The Cutting log and Cutting stone have pictures in the Craft strip.',
+      'Small wording fixes: the Craft button, the roasting stick, and what a rope is for.',
+    ],
+  },
+  {
     v: '0.13.0', date: '2026-10-24', title: 'Stirring the pot',
     notes: [
       'Soups and stews in the pot ask to be stirred while they cook: drag round in the pot, or hold Space.',

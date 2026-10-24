@@ -4310,10 +4310,22 @@ function addFind(w, r, kind, x, y, age = 0) {
 // A meadow kept before the finds gets the same round wherever the forager is when it opens.
 const CAMP_REACH = [2.5, 9];
 const CAMP_FINDS = 6;
-const CAMP_GROUND = { stick: 3, pebble: 3, drygrass: 2, birchbark: 1 };   // (a campfire: recipes.js BUILDS)
+// The guide says bark lies under the birches, so the birches nearest the start (within CAMP_BIRCH) shed it first.
+const CAMP_GROUND = { stick: 3, pebble: 3, drygrass: 2, birchbark: 2 };   // (a campfire: recipes.js BUILDS)
+const CAMP_BIRCH = 14;
 function startFinds(w) {
-  const r = w.findRng, F = w.forager;
-  for (const kind in CAMP_GROUND) for (let k = 0, n = 0; k < 300 && n < CAMP_GROUND[kind]; k++) {
+  const r = w.findRng, F = w.forager, birches = [];
+  forEachDecorNear(w, F.x, F.y, CAMP_BIRCH, d => { if (d.tree && !d.stump && !d.fallen && d.kind === 'birch' && d.size >= SAPLING) birches.push(d); });
+  birches.sort((a, b) => (a.x - F.x) ** 2 + (a.y - F.y) ** 2 - (b.x - F.x) ** 2 - (b.y - F.y) ** 2);
+  let bark = 0;
+  for (const d of birches) {
+    for (let k = 0; k < 20 && bark < CAMP_GROUND.birchbark; k++) {
+      const a = r.range(0, 2 * Math.PI), e = r.range(0.6, BIRCH_NEAR * 0.9);
+      if (addFind(w, r, 'birchbark', d.x + Math.cos(a) * e, d.y + Math.sin(a) * e * 0.8, Math.round(r.range(0.3, 1) * TPD))) { bark++; break; }
+    }
+    if (bark >= CAMP_GROUND.birchbark) break;
+  }
+  for (const kind in CAMP_GROUND) for (let k = 0, n = kind === 'birchbark' ? bark : 0; k < 300 && n < CAMP_GROUND[kind]; k++) {
     const a = r.range(0, 2 * Math.PI), d = r.range(1.5, CAMP_REACH[1] + k * 0.08);
     if (addFind(w, r, kind, F.x + Math.cos(a) * d, F.y + Math.sin(a) * d * 0.8, Math.round(r.range(0.3, 1) * TPD))) n++;
   }
@@ -6381,16 +6393,26 @@ function bodyTick(w) {
 }
 
 // It wakes at home (at camp, once there's one: campAt): warm enough to get going, dry, rested, and the satchel empty.
+// In the opening gale it's gentler, so a first meadow can't trap a new player: it wakes cosy (OPENING_WAKE), keeps what it
+// gathered, and wakes beside a fire it has laid but not lit yet.
 function wakeForager(w) {
-  const f = w.forager;
+  const f = w.forager, gale = openingStorm(w);
+  if (gale && !w.camp) {
+    const F = w.fires.find(F => !F.lit);
+    if (F) rocksFor(w);
+    if (F) for (const [dx, dy] of [[0.8, 0.06], [-0.8, 0.06], [0, 0.7]]) {
+      if (walkable(w, F.x + dx, F.y + dy) && !solidTile[idx(F.x + dx, F.y + dy)]) { f.homeX = F.x + dx; f.homeY = F.y + dy; break; }
+    }
+  }
   f.x = f.homeX; f.y = f.homeY; f.goalX = f.x; f.goalY = f.y; f.heading = Math.PI / 2;
   f.walking = false; f.running = false; f.sneaking = false; f.speed = 0; f.path.length = 0; f.rest = 0;
-  f.warmth = WAKE_WARMTH; f.wet = 0; f.stamina = 1; f.winded = false; f.stumble = 0; f.down = -1;
+  f.warmth = gale ? OPENING_WAKE : WAKE_WARMTH; f.wet = 0; f.stamina = 1; f.winded = false; f.stumble = 0; f.down = -1;
   f.tummy = Math.max(f.tummy, WAKE_TUMMY); f.warmIn = 0; f.health = Math.max(f.health, WAKE_HEALTH);
   if (f.hand === 'pot') potFalls(w);
   if (f.hand === 'board') boardBack(w);
-  f.bag.fill(''); f.bagN.fill(0); f.bagUse.fill(0); f.hand = '';
-  emit(w, { type: 'woke' });
+  if (!gale) { f.bag.fill(''); f.bagN.fill(0); f.bagUse.fill(0); }
+  f.hand = '';
+  emit(w, { type: 'woke', kept: gale });
 }
 
 // ---------------------------------------------------------------- skills
@@ -7825,7 +7847,7 @@ function asFractions(o, keys) { for (const k of keys) { const v = o[k]; o[k] = 0
 // held has its old end on it, and its storm blows over then.)
 const START_DAY = 3;
 const START_PHASE = 0.44, CLEAR_TO = 1.3;
-const ARRIVE_WARMTH = 0.78, ARRIVE_WET = 0.75;
+const ARRIVE_WARMTH = 0.78, ARRIVE_WET = 0.75, OPENING_WAKE = 1;   // (and waking from a collapse in it: wakeForager)
 const OPENING_HOLD = 2 ** 30, STORM_EASE = Math.round(TPD * 0.03), CLEAR_AFTER = 0.5;   // (0.03 of a day: 20 s at 1x)
 const GALE_COLD = 1, GALE_WIND = 1, GALE_SOAK = 1.25, GALE_LIGHTNING = 2;   // degrees colder, more wind, times as wet, times the strikes
 const GALE_NEAR_TICKS = 150, GALE_NEAR = [4, 12];   // and one round the forager about every 5 s at 1x, this many tiles off (weatherTick)

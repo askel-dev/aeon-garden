@@ -84,7 +84,7 @@ const INGREDIENTS = {
   clay:        { name: 'Clay',                tags: ['earth'],          fill: 0,   icon: '🟤', raw: false, text: 'Cool, heavy and red-grey. It holds the shape of your thumb.', where: 'On the muddy banks, right by the water.' },
   birchbark:   { name: 'Birch bark',          stack: 20, tags: ['tinder'],         fill: 0,   icon: '📜', raw: false, text: 'Papery curls that catch even when damp.', where: 'Under the birches, and a little way out from them.' },
   // Made, not found (made: true keeps it out of the book's Finds): BUILDS.rope twists it at the Craft strip, BUILDS.rod lashes it.
-  rope:        { name: 'Rope',                stack: 5, tags: ['cord'],           fill: 0,   icon: '🪢', raw: false, made: true, text: 'Dry grass twisted into a rope. Tie it to a friend (L) and lead them about.', where: 'Twisted from dry grass at the Craft strip.' },
+  rope:        { name: 'Rope',                stack: 5, tags: ['cord'],           fill: 0,   icon: '🪢', raw: false, made: true, text: 'Dry grass twisted into a rope. It goes into a fishing rod, and playing together it ties to a friend (L) to lead them about.', where: 'Twisted from dry grass at the Craft strip.' },
   rod:         { name: 'Fishing rod',         stack: 1, tags: ['tool'],           fill: 0,   uses: 60, mend: { rope: 1 },   icon: '🎣', raw: false, made: true, text: 'Two sticks lashed end to end, with a line and a thorn hook. Tap the water from the bank to cast.', where: 'Made from sticks and a rope at the Craft strip.' },
 };
 
@@ -505,7 +505,7 @@ const BUILDS = {
     name: 'Rope',
     needs: { drygrass: 5 },
     makes: 'rope',
-    text: 'Dry grass twisted and plied into a rope, to tie to a friend and lead them about.',
+    text: 'Dry grass twisted and plied into a rope, for a fishing rod, or to tie to a friend and lead them about.',
   },
   rod: {
     name: 'Fishing rod',

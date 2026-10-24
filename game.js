@@ -3277,7 +3277,7 @@ function pantFrame(f, now) {
   fg.pantAt = now + (PANT_MS[1] - (PANT_MS[1] - PANT_MS[0]) * v) * (0.9 + 0.2 * Math.random());
 }
 // Woken (sim.js wakeForager): the dark lifts with it at home, the camera already there.
-function bodyWoke() {
+function bodyWoke(kept) {
   const f = world.forager;
   fg.downAt = 0; fg.dark = false; fg.puffs.length = 0; fg.drips.length = 0; fg.snow = 0;
   $('#veil').classList.remove('dark');
@@ -3285,7 +3285,10 @@ function bodyWoke() {
   cam.x = f.x; cam.y = f.y - CAM_FEET * forPx() / cam.zoom; fg.lx = fg.ly = 0; fg.at = -1;
   ui.mark = null; ui.gather = null; ui.queue.length = 0; ui.fire = null; ui.place = null;
   renderSatchel();
-  setTimeout(() => toast('You wake at home, stiff with cold. The satchel is empty.'), 900);
+  const laid = kept && !world.camp && world.fires.some(F => !F.lit);
+  setTimeout(() => toast(!kept ? 'You wake at home, stiff with cold. The satchel is empty.'
+    : laid ? 'You wake by the fire you laid. Light it before the cold gets you again.'
+    : 'You wake, warm again for now. Your satchel is still with you. Get a fire going.'), 900);
 }
 const VITAL_FULL = 0.985;
 const FED_SHOW = 4000;                    // ms the face smiles after eating or a level up
@@ -3557,14 +3560,14 @@ const fireLaid = () => world.fires.length > 0 || !!world.camp;
 const touchy = () => !canHover.matches;
 const TASKS = [
   { name: 'A fire before dark', tasks: [
-    { id: 'sticks', say: 'Pick up sticks', got: () => taskHave('stick'), n: fireNeed('stick'), done: fireLaid,
+    { id: 'sticks', say: 'Pick up sticks', want: 'stick', got: () => taskHave('stick'), n: fireNeed('stick'), done: fireLaid,
       how: () => `They lie under the trees. ${touchy() ? 'Tap' : 'Click'} one to pick it up.` },
-    { id: 'pebbles', say: 'Find pebbles', got: () => taskHave('pebble'), n: fireNeed('pebble'), done: fireLaid,
+    { id: 'pebbles', say: 'Find pebbles', want: 'pebble', got: () => taskHave('pebble'), n: fireNeed('pebble'), done: fireLaid,
       how: () => 'On the shore, at the fords and round the rocks.' },
-    { id: 'tinder', say: 'Dry grass or birch bark', got: () => taskHave('tinder'), n: fireNeed('tinder'), done: fireLaid,
+    { id: 'tinder', say: 'Dry grass or birch bark', want: 'tinder', got: () => taskHave('tinder'), n: fireNeed('tinder'), done: fireLaid,
       how: () => 'Dry grass in the long grass, birch bark under the birches.' },
     { id: 'build', say: 'Build a campfire', done: fireLaid,
-      how: () => `The make button by the satchel${touchy() ? '' : ' (or F)'}, then pick a spot.` },
+      how: () => `The Craft button by the satchel${touchy() ? '' : ' (or F)'}, then pick a spot.` },
     { id: 'light', say: 'Light it', done: () => !!world.camp,
       how: () => 'Strike, then hold down to blow on it till it catches.' },
   ] },
@@ -3588,13 +3591,23 @@ const TASKS = [
   ] },
   { name: 'A home at camp', tasks: [
     { id: 'basket', say: 'Weave a basket', done: () => !!(world.camp && world.camp.basket),
-      how: () => { const b = Recipes.BUILDS.basket.needs; return `${b.stick} sticks and ${b.drygrass} dry grass, then the make button, in camp.`; } },
+      how: () => { const b = Recipes.BUILDS.basket.needs; return `${b.stick} sticks and ${b.drygrass} dry grass, then the Craft button, in camp.`; } },
   ] },
 ];
 const taskUi = { done: new Set(), fold: false, key: '', shown: -2, turnAt: 0, just: new Map(), fed: false, ate: false, quiet: true };
 try { for (const id of JSON.parse(localStorage.getItem(TASKS_KEY) || '[]')) taskUi.done.add(id); } catch (e) { /* fine */ }
 try { const v = localStorage.getItem(TASKS_FOLD); taskUi.fold = v === null ? narrow() : v === '1'; } catch (e) { /* fine */ }
 const taskTicked = t => (t.got ? t.got() >= t.n : false) || (t.done ? t.done() : false);
+// What the line being worked on asks to be picked (its `want`: the ingredients that word takes), or null. E and the edge
+// arrow go for these first, so "Pick up sticks" isn't answered with garlic.
+const TASK_TAKES = new Map();
+function taskWants() {
+  if (!world || taskUi.shown < 0 || taskUi.turnAt) return null;
+  const t = TASKS[taskUi.shown].tasks.find(t => !taskUi.done.has(t.id));
+  if (!t || !t.want || t.got() >= t.n) return null;
+  if (!TASK_TAKES.has(t.want)) TASK_TAKES.set(t.want, Recipes.takes(t.want));
+  return TASK_TAKES.get(t.want);
+}
 function foldTasks() {
   taskUi.fold = !taskUi.fold;
   try { localStorage.setItem(TASKS_FOLD, taskUi.fold ? '1' : '0'); } catch (e) { /* fine */ }
@@ -3606,6 +3619,10 @@ function renderTasks() {
   if (!el || !world || !world.forager) return;
   const now = performance.now(), f = world.forager;
   let fresh = false;
+  const on = taskUi.shown >= 0 && !taskUi.turnAt ? TASKS[taskUi.shown] : null;
+  if (on && on.tasks.some(t => !taskUi.done.has(t.id))) for (const t of on.tasks) {   // (lost from the satchel: not done after all)
+    if (t.got && taskUi.done.has(t.id) && !taskTicked(t)) { taskUi.done.delete(t.id); fresh = true; }
+  }
   for (const c of TASKS) for (const t of c.tasks) if (!taskUi.done.has(t.id) && taskTicked(t)) {
     taskUi.done.add(t.id); fresh = true;
     if (!taskUi.quiet) { taskUi.just.set(t.id, now); chime('click'); }
@@ -3760,6 +3777,8 @@ function closeWardrobe(go) {
   if (go && then) then();
 }
 const wardrobeOpen = () => !$('#wardrobe').classList.contains('hidden');
+// Picking an outfit in the opening gale holds the clock (alone: a friend's meadow goes on), so a hat costs no warmth.
+const outfitHolds = () => !(Net && Net.on) && S.openingStorm(world) && wardrobeOpen();
 $('#wardrobe-form').addEventListener('submit', e => { e.preventDefault(); if (!$('#wd-go').disabled) closeWardrobe(true); });
 $('#name-text').addEventListener('input', wardrobeReady);
 $('#wardrobe').addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); closeWardrobe(false); } });
@@ -3913,7 +3932,8 @@ function gatherAt(sx, sy, snap = true) {
   if (best) return { kind: 'green', it: best };
   S.forEachDecorNear(world, wx, wy + 3, 10, d => {        // a tree with fruit or mast: on it as it's drawn, the one in front
     if (!d.tree || d.stump || !(d.kind === 'apple' || d.kind === 'cherry' || d.kind === 'oak' || d.kind === 'beech')) return;
-    const [dx, dy] = toScreen(d.x, d.y), px = treePx(d), half = Math.max(8, px * 0.36), top = Math.max(12, px * 0.85);
+    const [dx, dy] = toScreen(d.x, d.y), px = treePx(d), bare = !S.whatThere(world, 'tree', d).n;   // (nothing on it: only its trunk, so a click up its crown walks on)
+    const half = Math.max(8, px * (bare ? 0.12 : 0.36)), top = Math.max(12, px * (bare ? 0.3 : 0.85));
     if (Math.abs(sx - dx) < half && sy > dy - top && sy < dy + Math.max(6, px * 0.14) && (!best || d.y > best.y)) best = d;
   });
   if (best) return { kind: 'tree', it: best };
@@ -4133,13 +4153,16 @@ function pickNear() {
 // What E would pick if no thing to use were nearer: { kind, it } or null (drawNear rings it in RING_E_ART). max is how far to
 // look (the E target asks only as far as the nearest thing to use, so a far pick's whatThere isn't worked out).
 function nearPick(max = NEAR_REACH) {
-  const F = world.forager, busy = gatherBusy();
-  let best = null, bd = max * max;
+  const F = world.forager, busy = gatherBusy(), want = taskWants();
+  let best = null, bd = max * max, wanted = false;
   const look = (kind, it) => {
     const d = (it.x - F.x) ** 2 + (it.y - F.y) ** 2;
-    if (d >= bd || (busy && ((ui.gather && ui.gather.it === it) || ui.queue.some(q => q.it === it)))) return;
-    if (!S.whatThere(world, kind, it).n) return;
-    best = { kind, it }; bd = d;
+    if (d >= (wanted ? bd : max * max) || (busy && ((ui.gather && ui.gather.it === it) || ui.queue.some(q => q.it === it)))) return;
+    const there = S.whatThere(world, kind, it);
+    if (!there.n) return;
+    const w = !!want && want.includes(there.id);        // (what the guide asks for wins over anything nearer)
+    if (wanted && !w || !w && d >= bd) return;
+    best = { kind, it }; bd = d; wanted = w;
   };
   for (let i = 0; i < picks.it.length; i++) look(picks.kind[i], picks.it[i]);
   for (const d of world.dropped) look('dropped', d);
@@ -4862,7 +4885,7 @@ function drawFiring(F, sx, sy, px, now) {
 function drawFire(F, z, now) {
   const px = firePx(z), sx = (F.x - cam.x) * z + vw / 2, sy = (F.y - cam.y) * z + vh / 2;
   if (F.ghost) {                                           // where one would go (ui.place)
-    ctx.globalAlpha = F.ok ? 0.6 : 0.3;
+    ctx.globalAlpha = F.ok ? 0.9 : 0.3;
     drawEmoji(FIRE_ARTS[7], sx, sy - FIRE_FOOT * px / 2, px);
     ctx.globalAlpha = 1;
     return;
@@ -6076,6 +6099,8 @@ const BUILD_ART = {
   rack: (g, size, U) => paintRack(g, size, U),
   lean: (g, size, U) => paintLean(g, size, U),
   block: (g, size, U) => paintBlock(g, size, U, 0),
+  cutlog: (g, size, U) => paintBlock(g, size, U * 1.15, 3),   // (as it lies at camp, a little bigger: it's flat)
+  cutstone: (g, size, U) => paintBlock(g, size, U * 1.15, 4),
 };
 const BUILD_ICONS = {};
 function buildIconURL(id) {
@@ -6172,7 +6197,8 @@ function makeThing(id) {
   renderSatchel(); renderBuild();
   if (b.makes === 'rod') holdSlot(into[0]);                // (made, it's in its hands)
   if (b.makes === 'rod') firstTime('rod', 'made', 'A fishing rod', `It's in your hands. Stand on the bank and ${SPRINT_BTN ? 'press and hold' : 'hold down on'} the water to charge a cast, then let go to throw. ${SPRINT_BTN ? 'Tap a slot' : 'A slot\'s number'} picks what you hold.`);
-  if (b.makes === 'rope' && firstOnce('rope-hint')) toast(`🪢 A rope. Stand by a friend and ${SPRINT_BTN ? 'tap the rope button' : 'press L'} to tie it on`);
+  if (b.makes === 'rope' && firstOnce('rope-hint')) toast(Net && Net.on ? `🪢 A rope. It goes into a fishing rod, or stand by a friend and ${SPRINT_BTN ? 'tap the rope button' : 'press L'} to tie it on`
+    : '🪢 A rope. With two sticks it makes a fishing rod, at the Craft strip.');
 }
 // Mends the tool in slot k back to new, for its mend (recipes.js), where it stands. The strip stays open.
 function mendThing(id, k) {
@@ -9470,8 +9496,20 @@ function placeAt(x, y) {
   P.why = P.torch ? S.torchSpot(world, x, y) : P.build === BASKET_BUILD ? S.basketSpot(world, x, y) : P.build === SEAT_BUILD ? S.seatSpot(world, x, y, SEAT_FACES[P.turn])
     : P.build === RACK_BUILD ? S.rackSpot(world, x, y) : P.build === LEAN_BUILD ? S.campSpot(world, x, y, P.build) : P.block ? S.blockSpot(world, x, y) : S.fireSpot(world, x, y);
   if (!P.why && !standAt(x, y, F.x)) P.why = 'No room to kneel by it';
+  if (P.why && P.fire) snapFire(P, F);                   // (a campfire refused here: the nearest spot close by that takes it)
   P.ok = !P.why;
   if (P.ok !== placeUi.ok) { placeUi.ok = P.ok; const b = $('#place-ok'); if (b) b.classList.toggle('no', !P.ok); }
+}
+// The nearest spot within FIRE_SNAP of where a campfire was refused that takes one, and in reach: in and by the woods
+// nearly every spot was refused (a trunk, a rock, the water), so the ghost goes where it can instead of saying no.
+const FIRE_SNAP = [0.5, 1, 1.5, 2, 2.5], FIRE_SNAP_TURNS = 12;
+function snapFire(P, F) {
+  for (const r of FIRE_SNAP) for (let k = 0; k < FIRE_SNAP_TURNS; k++) {
+    const a = (k + (r * 2 & 1) * 0.5) / FIRE_SNAP_TURNS * TAU, x = P.x + Math.cos(a) * r, y = P.y + Math.sin(a) * r * 0.8;
+    if (Math.hypot(x - F.x, y - F.y) > PLACE_REACH || S.fireSpot(world, x, y) || !standAt(x, y, F.x)) continue;
+    P.x = x; P.y = y; P.why = '';
+    return;
+  }
 }
 function placeHere(sx, sy) {
   const P = ui.place;
@@ -10563,7 +10601,7 @@ function cookStart() {
   fireFlare.set(j.F, now - TAKE_MS);
   chime('kindle', { v: 0.45 });
   renderSatchel(); renderCook();
-  if (FIRE_COOK && firstOnce('cook:bubbling')) toast('Bubbling away on the fire. Walk off if you like: it keeps cooking.');
+  if (FIRE_COOK && firstOnce('cook:bubbling')) toast(`${VESSEL_BUSY[cookVessel] || 'Bubbling away'} on the fire. Walk off if you like: it keeps cooking.`);
 }
 // The window's stage follows the fire's pot: cooking while it's on, the dish taken out of it once it's done (cookDone), the
 // pot to fill when it's empty. Opened on a pot already going, it's drawn as it was left (what's in it, from the fire).
@@ -10704,7 +10742,7 @@ function renderCook(measure = true) {
     cookUi.p = -1;
     if (ui.selectedId || ui.picked) select(0);            // (the inspector would sit under it)
     if (world.forager && cookMode() === 'make' && firstOnce('make:open')) toast(`Something to cook with first: drag what it takes from your satchel onto the fire.`);
-    else if (world.forager && cookMode() === 'cook' && firstOnce('cook:open')) toast(fingerTap || matchMedia('(pointer: coarse)').matches ? 'Drag things from your satchel into the pot (or tap them), then <b>Cook</b>.' : 'Drag things from your satchel into the pot (or click them), then <b>Cook</b>.');
+    else if (world.forager && cookMode() === 'cook' && firstOnce('cook:open')) toast(`Drag things from your satchel ${intoWord()} (or ${fingerTap || matchMedia('(pointer: coarse)').matches ? 'tap' : 'click'} them), then <b>Cook</b>.`);
   }
   if (!open) return;
   const j = ui.fire, f = world.forager, busy = j.stage === 'cooking';
@@ -10775,11 +10813,15 @@ function renderCook(measure = true) {
   }
   if (measure) { cookUi.vw = vw; cookUi.vh = vh; measureCook(); }
 }
+// Where things go in the vessel cooked in, and what it's doing on the fire, in words (the roasting stick isn't a pot).
+const VESSEL_INTO = { pot: 'into the pot', pan: 'onto the griddle', stick: 'onto the stick', stone: 'onto the stone', bowl: 'into the bowl' };
+const VESSEL_BUSY = { pot: 'Bubbling away', pan: 'Sizzling away', stick: 'Roasting away', stone: 'Baking away', bowl: 'Mixing' };
+const intoWord = () => VESSEL_INTO[cookVessel] || 'into the pot';
 // What the satchel's label says it's for (at the fire itself: tap or click too).
 const bagWord = making => {
   const tap = fingerTap || matchMedia('(pointer: coarse)').matches ? 'tap' : 'click';
   if (FIRE_COOK && !making && cookVessel === 'pot') return `${tap} to cut, drag into the pot`;   // (the pot's things are cut on the board: boardFor)
-  return (FIRE_COOK ? `${tap} or drag` : 'drag') + (making ? ' onto the fire' : ' into the pot');
+  return (FIRE_COOK ? `${tap} or drag` : 'drag') + (making ? ' onto the fire' : ' ' + intoWord());
 };
 // The things in the pot that have met the water (or, making, come down on the fire), one bit each.
 function landedMask(j, now) {
@@ -11017,6 +11059,17 @@ const NEAR_TILES = 2.6;                    // the camera close enough for this m
 const NEAR_STRETCH = 3, NEAR_LEAST = 120;
 const nearMost = () => Math.max(NEAR_LEAST, furTop() * NEAR_STRETCH / FORAGER_SIZE - 8);
 const NEAR_POT = 0.26;                     // the pot's half-width, in the fire's painted size (firePx)
+const COOK_HAT = 0.42;                      // the forager kneeling at the fire: its hat this much of its painting's box over its feet
+// The foot of the HUD's top row (the face, the sky dial, the pill), in px; 0 with none up. (The forager kneels well to one
+// side of the fire this close, under one corner or the other.)
+function hudOver() {
+  let b = 0;
+  for (const q of ['#me-box', '#sky', '#hud-right .hud-top', '#thermo']) {
+    const r = $(q)?.getBoundingClientRect();
+    if (r && r.height) b = Math.max(b, r.bottom + 6);
+  }
+  return b;
+}
 const NEAR_HEAD = 40, NEAR_RINGS = 56, NEAR_UNDER = 56;   // px kept clear for the HUD's top row, the rings over the pot and the line under it (measureCook)
 const POT_LIFT = 0.22;                      // at the fire itself, how far up the pot stands on its three sticks, of its half-width
 const potLaid = { sx: NaN, sy: NaN, z: 0, key: '' };   // where the meadow drew the fire this frame, and how close (drawPot)
@@ -11091,10 +11144,20 @@ function measureCook() {
     kw.zoom = clamp(Math.min(vw / NEAR_TILES, (vh - foot) / (NEAR_TILES * 0.62), room / 2.2 / (FIRE_SIZE * NEAR_POT) - 8), 48, nearMost());
     const rx = firePx(kw.zoom) * NEAR_POT, least = head + NEAR_RINGS + rx * 1.7;
     kw.fx = vw / 2 - (sideCard() ? CARD_W / 2 : 0);   // (the fire itself lands in the middle of the screen, whatever the strip below it does; a little left with the card beside it)
-    kw.fy = float ? Math.max(least, vh / 2 + (rx * 1.7 + NEAR_RINGS - rx * 0.5 - below) / 2)   // (the rings, the pot and the bar under it in the middle)
+    const aim = (z, rx, least) => float ? Math.max(least, vh / 2 + (rx * 1.7 + NEAR_RINGS - rx * 0.5 - below) / 2)   // (the rings, the pot and the bar under it in the middle)
       : lay === 'sheet' ? Math.max(least, vh - foot - rx * 0.6 - 14)                           // (the pot just over the sheet)
       : clamp(vh / 2, least, Math.max(least, vh - foot - NEAR_UNDER - rx * 0.5));               // (or as near it as the rings and the line allow)
-    cv.style.width = Math.round(rx / 0.34) + 'px'; cv.style.height = Math.round(rx * 1.6 / 0.38) + 'px';
+    kw.fy = aim(kw.zoom, rx, least);
+    // and the forager kneeling beside it with its hat clear of the HUD over it (the sky dial, the pill): lower, or a little further out
+    const hud = hudOver(), hat = z => (8 + z) * FORAGER_SIZE * COOK_HAT;
+    for (let z = kw.zoom; kw.fy - hat(z) < hud && z > 48; ) {
+      z = Math.max(48, z - 4);
+      const r = firePx(z) * NEAR_POT;
+      kw.zoom = z; kw.fy = aim(z, r, Math.max(head + NEAR_RINGS + r * 1.7, hud + hat(z)));
+      if (kw.fy + r * 0.5 + below <= vh - foot) break;
+    }
+    const rz = firePx(kw.zoom) * NEAR_POT;
+    cv.style.width = Math.round(rz / 0.34) + 'px'; cv.style.height = Math.round(rz * 1.6 / 0.38) + 'px';
     potLaid.key = '';
   }
   const w = cv.clientWidth, h = cv.clientHeight, d = Math.min(2, dpr);
@@ -11465,7 +11528,9 @@ function layNear() {
   // the side card: on the far side of the pot from the forager, its near edge 2.2 of the pot's half-widths from the pot's middle (and clear of the
   // rings over it), its top at the slots' (over the rim), slid sideways and up or down to stay on screen and clear of the bar
   const top = cookUi.top, gap = Math.max(rx * 2.2, cookUi.slotW / 2 + 14);
-  const cx = Math.round(left ? Math.max(x - gap - CARD_W, 12) - x : Math.min(x + gap, vw - 12 - CARD_W) - x), cy = Math.round(clamp(y - rx * 1.7 - 76, top, barTop - 10 - cookUi.cardH) - y);
+  const note = $('#tasks'), nr = left && note && !note.classList.contains('away') && note.childElementCount ? note.getBoundingClientRect() : null;
+  const floor = nr && nr.width ? Math.min(nr.right + 12, x - rx * 1.3 - CARD_W) : 12;   // (clear of the first things' note, short of the pot)
+  const cx = Math.round(left ? Math.max(x - gap - CARD_W, floor, 12) - x : Math.min(x + gap, vw - 12 - CARD_W) - x), cy = Math.round(clamp(y - rx * 1.7 - 76, top, barTop - 10 - cookUi.cardH) - y);
   if (cx === cookUi.cardX && cy === cookUi.cardY) return;
   cookUi.cardX = cx; cookUi.cardY = cy;
   $('#cook-card').style.transform = `translate(${cx}px, ${cy}px)`;
@@ -14362,6 +14427,17 @@ function drawGlints(now, dark) {
   }
   ctx.setTransform(dpr, 0, 0, dpr, shakeX, shakeY);
   ctx.globalAlpha = 1;
+  const want = taskWants();                               // (the guide asks for sticks or tinder: the arrow points to those)
+  if (want) {
+    seen = 0; near = null; nd = Infinity;
+    for (let i = picks.food; i < picks.it.length; i++) {
+      const it = picks.it[i];
+      if (!want.includes(it.kind)) continue;
+      const d2 = (it.x - F.x) ** 2 + (it.y - F.y) ** 2;
+      if (d2 < nd) { nd = d2; near = it; nearKind = picks.kind[i]; }
+      if (visible((it.x - cam.x) * z + vw / 2, (it.y - cam.y) * z + vh / 2, 0)) seen++;
+    }
+  }
   picks.seen = seen; picks.near = near; picks.nearKind = nearKind;
 }
 // The marker at the screen's edge, toward the nearest thing to pick while none is on screen, with that thing's painting in
@@ -14460,7 +14536,8 @@ function drawPickArrow(now) {
 // The way home: once there's a camp, whenever its fire is off screen the same parchment disc sits at the screen's edge where
 // the way from the forager to it leaves, its point turned that way and a little campfire in it (CAMPMARK_ART, painted once).
 // Always there, so it's calm: no pop or rings, only a slow warm breath. Drawn first: friends' markers and the pick marker
-// slide along the edge out from under it (edgeApart). Fades in and out as the camp goes off and comes on screen.
+// slide along the edge out from under it (edgeApart). Fades in and out as the camp goes off and comes on screen. Before
+// there's a camp it points the same way to the first fire laid, so one built and left unlit is found again.
 const campMark = { a: 0, at: 0 };
 let CAMPMARK_ART = null;
 function campMarkArt() {                                 // two crossed logs and a flame, in the middle of a P box
@@ -14482,7 +14559,7 @@ function campMarkArt() {                                 // two crossed logs and
   return CAMPMARK_ART;
 }
 function drawCampMark(now) {
-  const C = world.camp, dt = Math.min(100, now - campMark.at);
+  const C = world.camp || world.fires[0] || null, dt = Math.min(100, now - campMark.at);
   campMark.at = now;
   let want = 0;
   if (C && world.forager.down < 0) {
@@ -17955,7 +18032,7 @@ function drawPaintedTree(d, sx, sy, now, ck, stage = S.treeStage(world, d), px =
 }
 // A tree standing in front of the forager fades to SEE_A, as in Project Zomboid, so it's never lost in a wood. Only
 // the trees that are or were in front of it are kept (seeing), each eased in and out over SEE_MS.
-const SEE_A = 0.35, SEE_MS = 220;
+const SEE_A = 0.2, SEE_MS = 220;
 const seeing = new Map();                  // tree: how far it's faded, 0..1
 const fgBody = { on: false, x: -0, y: -0, w: -0, h: -0, wy: -0 };   // the forager's body on screen this frame (render), and its y in the meadow
 let seeDt = -0, seeLast = -0;
@@ -19725,7 +19802,7 @@ function handleEvent(e) {
       break;
     }
     case 'woke':
-      bodyWoke();
+      bodyWoke(e.kept);
       break;
     case 'dried': {                                         // (something on a rack dried: sim.js rackTick)
       const K = nearestRack(e.x, e.y), name = Recipes.INGREDIENTS[e.id]?.name || e.id;
@@ -21408,7 +21485,8 @@ function toggleMore(open = $('#more-menu').classList.contains('hidden')) {
   $('[data-act="more"]').classList.toggle('on', open);
 }
 
-// Once ever, a while (two minutes of play) after the first dish is cooked: are you enjoying it, and any ideas? The idea goes to Web3Forms,
+// Once ever, a while (two minutes of play) after the first dish is cooked, and not before the first things are through to
+// the last chapter (the guide is still teaching till then): are you enjoying it, and any ideas? The idea goes to Web3Forms,
 // which emails it on. The key is theirs to give out (it can only send to that one inbox). With no key
 // the card never shows.
 const IDEAS_KEY = '74821b79-dd35-4f02-a7a4-24ebb7c7ebff';   // the access key from web3forms.com
@@ -21422,19 +21500,21 @@ const canShare = !!navigator.share && matchMedia('(pointer: coarse)').matches;  
 function askTick(ms) {
   if (!IDEAS_KEY || played < 0 || document.hidden) return;
   if ((played += ms) < ASK_MS) return;
-  if (!$('#more-menu').classList.contains('hidden') || ui.fire) return;   // (not over the menu, or at a fire: cooking, lighting)
+  if (taskUi.shown >= 0 && taskUi.shown < TASKS.length - 1) return;   // (the guide's first chapters still going)
+  if (!$('#more-menu').classList.contains('hidden') || ui.fire || !canAnnounce()) return;   // (not over the menu or a card, or at a fire: cooking, lighting)
   played = -Infinity;
   try { localStorage.setItem('aeon-garden-asked', '1'); } catch (e) { /* fine */ }
-  askIdeas(true);
+  askIdeas(true, false);
 }
-function askIdeas(open) {
+// asked: opened from the ••• menu, so the text box takes the keys (asked of its own it doesn't: WASD and E go on walking).
+function askIdeas(open, asked = true) {
   if (open && $('#ask').classList.contains('sent')) {   // another idea, after one went off (from the ••• menu)
     $('#ask').classList.remove('sent');
     $('#ask-text').value = '';
     $('#ask-send').disabled = false;
   }
   $('#ask').classList.toggle('hidden', !open);
-  if (open && !narrow()) $('#ask-text').focus({ preventScroll: true });   // (on a phone the keyboard would jump up)
+  if (open && asked && !narrow()) $('#ask-text').focus({ preventScroll: true });   // (on a phone the keyboard would jump up)
 }
 function sendIdea() {
   const text = $('#ask-text').value.trim();
@@ -24383,7 +24463,7 @@ function frame(now) {
       if (Net && Net.on) netTick();
     }
     acc = 0;
-  } else if (Net && Net.guest ? net.tick >= 0 : ui.speed > 0) {
+  } else if (Net && Net.guest ? net.tick >= 0 : ui.speed > 0 && !outfitHolds()) {
     if (Net && Net.guest) acc = guestBehind(now);       // (a guest keeps to the host's clock)
     else acc += dt * TICKS_PER_SECOND * ui.speed;
     const want = Math.min(Math.floor(acc), 2000), n = Math.min(want, simFit), t0 = performance.now();

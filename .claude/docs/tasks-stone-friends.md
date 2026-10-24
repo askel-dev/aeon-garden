@@ -5,7 +5,8 @@ First things (2026-10-17; the comment over game.js `TASKS`): a new player's guid
 dark (sticks, pebbles, tinder with counts from recipes.js `BUILDS.campfire`, build, light), the first night (a stick on, see the sun
 come up), something to eat (pick food, the book, a roasting stick, cook, eat it), a home at camp (the basket). Each line ticks itself
 off from the meadow and the satchel (`got`/`n`, `done`; a stick fed and a dish eaten are heard as events, `taskUi.fed`, `taskUi.ate`),
-and stays ticked per player (`aeon-garden-tasks`), so it's for the first meadow or so; on load what's already true ticks quietly. A
+and stays ticked per player (`aeon-garden-tasks`; a line with `got` unticks again while its chapter is under way and the
+satchel no longer has them), so it's for the first meadow or so; on load what's already true ticks quietly. A
 line ticked pops its circle with a click; the line worked on says how (`how`); a chapter done is a toast and `found`, stays ticked
 `TASK_TURN_MS`, then the next pops in; the last is a gold headline ("Settled in") and the note is gone for good. A tap on its head
 folds it to the one line (`aeon-garden-tasks-fold`). Away while the book, the wardrobe
