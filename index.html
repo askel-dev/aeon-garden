@@ -1232,7 +1232,7 @@
   #book-scrim { position: fixed; inset: 0; z-index: 8; background: rgba(40, 32, 18, 0.32); animation: fade-in 0.2s ease-out; pointer-events: none; }   /* (the meadow still takes taps: walking doesn't shut the book) */
   #book { position: fixed; z-index: 9; left: 50%; transform: translateX(-50%); top: calc(var(--top) + 8px); bottom: calc(var(--bottom) + 8px);
     width: min(880px, calc(100% - 32px)); max-height: 620px; margin: auto 0; outline: none; color: var(--ink);
-    display: grid; grid-template-columns: 1.05fr 1fr; grid-template-rows: auto minmax(0, 1fr); grid-template-areas: 'top page' 'pages page';
+    display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); grid-template-areas: 'top page' 'pages page';
     border-radius: 18px; overflow: hidden; background: var(--paper, none) var(--card);
     box-shadow: 0 20px 60px rgba(50, 40, 15, 0.35), inset 0 0 0 1px rgba(150, 115, 60, 0.22), inset 0 0 0 5px rgba(201, 154, 76, 0.18); }
   #book::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 5px; z-index: 3;
@@ -1444,6 +1444,10 @@
     #book .b-head h2 { font-size: 21px; }
     #book .b-head { margin-top: -14px; }   /* (the ribbons hang from the brass edge, as above, under the thinner padding) */
     #book .b-head .n { font-size: 19px; align-self: center; }
+    /* (the ribbons share half the book here: only the open one keeps its word, or they'd push the right page off the edge) */
+    #book .b-head { gap: 6px; }
+    #book .tab { padding: 6px 12px; }
+    #book .tab:not(.on) span { display: none; }
     #book-sub { display: none; }
     #book .b-pages { padding: 0 16px 12px 18px; }
     #book h3.sec { margin: 10px 0 6px; }
