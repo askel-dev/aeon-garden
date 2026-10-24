@@ -1109,6 +1109,25 @@
     padding: 8px 16px 9px; text-align: center; box-shadow: var(--edge), inset 0 0 0 2px var(--card), inset 0 0 0 3px #d8bd84, var(--shadow); }
   #cook-timer.made .ct-name { font-size: 19px; white-space: normal; }
   #cook-timer .ct-say { margin: 0; font-size: 14px; line-height: 1.3; color: #9a7a58; }
+  /* the stirs while it cooks (game.js renderTimer): met in gold, missed smoky, the one wanted now breathing; and once out, how
+     each step went (its marks: done well in ink, the rest faded), a perfect dish's name in gold */
+  #cook-timer .ct-stirs { display: flex; align-items: center; gap: 4px; margin-top: 6px; font-size: 11.5px; font-weight: 800; color: #8a6a48; }
+  #cook-timer .ct-stirs i { width: 9px; height: 9px; border-radius: 50%; background: #e6d7b8; box-shadow: inset 0 1px 1px rgba(80, 60, 30, 0.25); }
+  #cook-timer .ct-stirs i:first-of-type { margin-left: 2px; }
+  #cook-timer .ct-stirs i.on { background: radial-gradient(circle at 35% 30%, #f6d98c, #b07a2a 70%); box-shadow: 0 0 0 1px #8a5e22; }
+  #cook-timer .ct-stirs i.miss { background: radial-gradient(circle at 35% 30%, #8a8078, #4a423c 70%); box-shadow: 0 0 0 1px #3c342e; }
+  #cook-timer .ct-stirs i.ask { background: #ffc677; box-shadow: 0 0 0 1px #c98a2e, 0 0 6px 2px rgba(255, 190, 100, 0.8); animation: stir-ask 0.9s ease-in-out infinite alternate; }
+  @keyframes stir-ask { from { transform: scale(0.8); } to { transform: scale(1.25); } }
+  #cook-timer .ct-how { display: block; margin-top: 4px; font-size: 12.5px; font-weight: 900; line-height: 1.25; color: #d0702a; animation: stir-how 0.9s ease-in-out infinite alternate; }
+  @keyframes stir-how { from { opacity: 0.7; } to { opacity: 1; } }
+  #cook-timer .ct-marks { display: flex; flex-wrap: wrap; justify-content: center; gap: 2px 8px; margin-top: 2px; font-size: 12px; font-weight: 800; color: #b3a088; }
+  #cook-timer .ct-marks i { font-style: normal; }
+  #cook-timer .ct-marks i.on { color: #6f5a3a; }
+  #cook-timer .ct-marks i.on::before { content: '✓ '; color: #a8742a; }
+  #cook-timer.made.perfect .ct-name { color: #9a6a1a; text-shadow: 0 0 10px rgba(255, 210, 120, 0.7); }
+  #cook-timer.made.burnt .ct-name { color: #6a5446; }
+  #cook-canvas.stir { cursor: grab; }
+  #cook-canvas.stirring { cursor: grabbing; }
   #cook.at-fire.busy :is(.cook-part, #cook-basket, #cook-book) { display: none; }
   #cook.at-fire.busy .cook-row { padding-left: 0; border-left: none; }
   #cook.at-fire.empty .cook-act #cook-go { display: none; }

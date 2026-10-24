@@ -5600,6 +5600,7 @@ const BRUSH_NEAR = 2.5;                 // tiles about it it looks for brush in,
 // rod was carried for good, out of a slot (unpackWorld puts it in the satchel now, and it stays 0); the rod is an item
 // (recipes.js INGREDIENTS.rod), the fishing game.js's, and what it lands it takes here (takeFish).
 // fishBest: the biggest of each kind it has landed, { roach: grams } (game.js landFish; a kind not yet landed isn't in it).
+// best: the best each dish has come out of the pot, { 'Watercress soup': 'perfect' } (potGrade's words; game.js cookDone).
 // hand: the dish it carries in its hand (a dish's name, '' for none): one at most, and lost with the satchel. handHeat: how hot
 // it still is (1 off the fire, 0 cold: HAND_COOL), handFull: how much of it is left (1, down to HAND_LEAST sprinting with it).
 const SLOTS = 8, STACK = 10;            // the satchel's slots, and how many of a kind one holds (by default)
@@ -5619,7 +5620,7 @@ function foragerOf(x, y) {
     warmth: -0, wet: -0, stamina: -0, feel: -0, winded: false, down: -1, stumble: 0, homeX: x, homeY: y, tummy: -0, warmIn: 0, health: -0,
     jumpT: 0, jz: -0, jumpV: -0, jumpSpeed: -0, jumpFX: -0, jumpFY: -0, jumpAt: 0,
     hop: -0, hopBuf: 0, hopWin: 0, landTick: 0, hopAim: -0,
-    hand: '', handHeat: -0, handFull: -0, rest: 0, xp: bySkill(-0), lv: bySkill(0), kit: kitOf(), rod: 0, fishBest: {} };
+    hand: '', handHeat: -0, handFull: -0, rest: 0, xp: bySkill(-0), lv: bySkill(0), kit: kitOf(), rod: 0, fishBest: {}, best: {} };
   f.warmth = 1; f.stamina = 1; f.tummy = 1; f.health = 1;   // (after: they start as fractions, so the layout never changes; a kept one from before the tummy starts full)
   return f;
 }
@@ -6546,6 +6547,7 @@ function cookOn(w, F, dish, items, ticks, by = w.forager, inPot = false, chopped
   if (inPot && (!P || P.water < POT_LEAST)) return false;   // (in the pot: its water, as it's warmed so far)
   if (P) {
     P.dish = dish; P.boiled = P.heat; P.chopped = chopped; P.burnt = 0; P.thingsN = Math.min(P.things.length, items.length);
+    P.stirred = 1; P.asks = 0; P.stirs = 0; P.ask = 0;
     for (let k = 0; k < P.things.length; k++) P.things[k] = k < P.thingsN ? items[k] : '';
   }
   F.cookDish = dish; F.cookItems = items.slice(); F.cookLeft = F.cookTotal = Math.max(1, Math.round(ticks / (by ? perk(by, 'cooking', 'speed') : 1)));
@@ -6559,7 +6561,7 @@ function cookTake(w, F) {
   F.cookDish = ''; F.cookItems = []; F.cookLeft = F.cookTotal = 0;
   if (P && P.dish) {                                    // (out of the pot: its water was the dish)
     P.dish = ''; P.water = 0; P.thingsN = 0; P.things.fill('');
-    P.boiled = 0; P.chopped = 0; P.stirred = 0; P.burnt = 0;
+    P.boiled = 0; P.chopped = 0; P.stirred = 0; P.burnt = 0; P.asks = 0; P.stirs = 0; P.ask = 0;
   }
   return dish;
 }
@@ -6749,13 +6751,19 @@ const POT_SCOOP = 0.34;                 // a scoop at the water's edge: three fi
 const POT_LEAST = 0.3;                  // the water a dish in it wants
 const POT_SLOP = 0.35 / SPRINT_TICKS;   // a tick of sprinting with it full: a whole sprint slops a third out (less as it empties)
 const POT_TRIP = 0.25;                  // and a stumble with it
+// A dish cooking in a pot asks for a stir now and then (potStirs): STIRS of them a cook by how long it is, evenly through it,
+// each for STIR_WAIT ticks of its cooking at most (less in a short one, so they never overlap).
+const STIR_LONG = 1500, STIR_SHORT = 750;   // ticks a cook takes for three stirs (50 s at 1x), and for two (25 s); shorter, one
+const STIR_WAIT = 240;                  // ticks an ask waits for a stir (8 s at 1x) before it's missed
+const CUT_WELL = 0.99;                  // chopped, as much as a perfect dish wants (everything cut as it asks)
 // Every field a pot ever has: where it is (x, y), the fire it's on (an index into w.fires, -1 for none), who holds it (0 the
-// forager, -1 nobody), how much water is in it (0 to 1) and how hot that is (0 cold to 1 a rolling boil). And for the steps
-// to come (PLAN.md stage 12): what went in (things, thingsN, as the dish cooking on its fire had it), how well each step went
-// (boiled: how hot it was as they went in; chopped, stirred: 0 to 1; burnt: 1 once it caught), and the dish cooking in it
+// forager, -1 nobody), how much water is in it (0 to 1) and how hot that is (0 cold to 1 a rolling boil). And PLAN.md stage
+// 12's: what went in (things, thingsN, as the dish cooking on its fire had it), how well each step went (boiled: how hot it
+// was as they went in; chopped, stirred: 0 to 1; burnt: 1 once it caught), the stirs (asks: how many it's asked for this
+// cook, stirs: how many were met, ask: ticks the one asked for now still waits, 0 for none), and the dish cooking in it
 // ('' for none).
 const potOf = (x, y) => ({ pot: true, x, y, fire: -1, held: -1, water: -0, heat: -0, things: ['', '', '', ''], thingsN: 0,
-  boiled: -0, chopped: -0, stirred: -0, burnt: -0, dish: '', copper: false });
+  boiled: -0, chopped: -0, stirred: -0, burnt: -0, asks: 0, stirs: 0, ask: 0, dish: '', copper: false });
 // The sunken copper pot (PLAN.md stage 14, recipes.js TREASURES copperpot), fished up and left on the bank at x, y: a pot
 // like the clay ones, not owed to any fire (potsOwed doesn't count it), that heats COPPER_WARM times as quick.
 const COPPER_WARM = 2;
@@ -6855,7 +6863,47 @@ function potsTick(w, n = POT_EVERY) {
         else if (!P.dish) emit(w, { type: 'potdry', pot: P });
       }
     }
+    if (P.dish && F) potStirs(w, P, F, n);
   }
+}
+// How many stirs a dish cooking on fire F asks for (by how long it takes: STIR_LONG, STIR_SHORT).
+const stirsOf = F => (F.cookTotal >= STIR_LONG ? 3 : F.cookTotal >= STIR_SHORT ? 2 : 1);
+// The stirs, n ticks of a dish cooking in pot P on fire F (potsTick): only while it cooks (the fire lit, the pot simmering),
+// so an ask waits with the dish when the fire's out. The next is asked for once the cook is that far along (an even share of
+// it each, event 'potask'); not stirred in its time (stirPot), it's missed and the bottom catches a little ('potmiss'). Done
+// with one still asked for, that one's missed too. stirred is the share met of those asked so far, for potGrade.
+function potStirs(w, P, F, n) {
+  if (!(F.cookLeft > 0)) { P.ask = 0; return; }
+  if (!F.lit || P.heat < POT_SIMMER) return;
+  if (P.ask > 0) {
+    P.ask = Math.max(0, P.ask - n);
+    if (P.ask === 0) emit(w, { type: 'potmiss', pot: P, fire: F });
+    return;
+  }
+  const k = stirsOf(F);
+  if (P.asks < k && 1 - F.cookLeft / F.cookTotal >= (P.asks + 1) / (k + 1)) {
+    P.asks++; P.stirred = P.stirs / P.asks;
+    P.ask = Math.max(POT_EVERY, Math.min(STIR_WAIT, Math.round(F.cookTotal / (k + 1) * 0.8 / POT_EVERY) * POT_EVERY));
+    emit(w, { type: 'potask', pot: P, fire: F });
+  }
+}
+// The pot stirred (game.js: the spoon taken round it by hand): the stir it's asking for is met. Whether it was asking.
+function stirPot(w, P) {
+  if (!P || !(P.ask > 0)) return false;
+  P.ask = 0; P.stirs++; P.stirred = P.stirs / P.asks;
+  emit(w, { type: 'potstir', pot: P });
+  return true;
+}
+// How well the dish in pot P came out (PLAN.md stage 12, "How well, and how it shows"), by its marks: 'burnt' once it boiled
+// dry, whatever else went well; 'perfect' put in at a rolling boil, everything cut as it asks and every stir met; 'rough'
+// with little of the boil and the board between them (cold water and things whole, or only simmering and barely cut);
+// else 'good'. A stir missed only ever takes a perfect dish down to good. '' with no dish in it.
+function potGrade(P) {
+  if (!P || !P.dish) return '';
+  if (P.burnt) return 'burnt';
+  const boil = P.boiled >= POT_ROLL ? 1 : P.boiled >= POT_SIMMER ? 0.5 : 0;
+  if (boil === 1 && P.chopped >= CUT_WELL && P.stirs >= P.asks) return 'perfect';
+  return boil + P.chopped < 1 ? 'rough' : 'good';
 }
 // Carried a tick (bodyTick): sprinting slops some out, a stumble more.
 function potCarried(w, sprint, trip) {
@@ -7587,14 +7635,15 @@ function snapTool(w, k) {
 // Back to new.
 function mendTool(S, k) { if (usesOf(S.bag[k])) S.bagUse[k] = 0; }
 // Eats one of what's in slot k: fill (recipes.js: how much it fills, game.js reads it) into the tummy, and a warm dish's
-// warmth. Returns '' if it ate, else why not in a few words (game.js says it).
+// warmth (warm: true, or how much as a dish warms: recipes.js foodOf's warmth, by its grade). Returns '' if it ate, else why
+// not in a few words (game.js says it).
 function feedForager(w, k, fill, warm) {
   const f = w.forager;
   if (!f.bag[k] || f.down >= 0) return 'Nothing there';
   if (!(fill > 0)) return 'Not something to eat';
   if (f.tummy > 0.97) return 'I\'m full';
   f.tummy = Math.min(1, f.tummy + fill / TUMMY);
-  if (warm) { f.warmth = Math.min(1, f.warmth + WARM_DISH); f.warmIn = WARM_IN; }
+  if (warm) { f.warmth = Math.min(1, f.warmth + WARM_DISH * +warm); f.warmIn = WARM_IN; }
   const id = f.bag[k];
   if (!--f.bagN[k]) f.bag[k] = '';
   emit(w, { type: 'ate', id, warm: !!warm });
@@ -7609,7 +7658,7 @@ function feedHand(w, fill, warm) {
   if (f.tummy > 0.97) return 'I\'m full';
   f.tummy = Math.min(1, f.tummy + fill * f.handFull / TUMMY);   // (what's left of it: sprinting slopped some out)
   const hot = warm && f.handHeat > HAND_WARM;             // (gone cold in the hand, it only fills)
-  if (hot) { f.warmth = Math.min(1, f.warmth + WARM_DISH); f.warmIn = WARM_IN; }
+  if (hot) { f.warmth = Math.min(1, f.warmth + WARM_DISH * +warm); f.warmIn = WARM_IN; }
   f.hand = ''; f.handHeat = 0; f.handFull = 0;
   emit(w, { type: 'ate', id, warm: hot });
   return '';
@@ -8122,7 +8171,11 @@ function unpackWorld(kept) {
     if (!F.own) F.own = [];                             // (kept before vessels were each fire's)
   }
   if (!w.pots) w.pots = [];                             // (kept before the pot was a thing: one on each fire that made one, below)
-  for (const P of w.pots) { asFractions(P, ['x', 'y', 'water', 'heat', 'boiled', 'chopped', 'stirred', 'burnt']); if (P.copper === undefined) P.copper = false; }
+  for (const P of w.pots) {
+    asFractions(P, ['x', 'y', 'water', 'heat', 'boiled', 'chopped', 'stirred', 'burnt']);
+    if (P.copper === undefined) P.copper = false;
+    if (P.asks === undefined) { P.asks = 0; P.stirs = 0; P.ask = 0; }   // (kept before the stirs)
+  }
   if (!w.hauled) w.hauled = [];                         // (kept before the treasures)
   if (!w.torches) w.torches = [];                       // (kept before torches)
   for (const T of w.torches) asFractions(T, ['x', 'y', 'burn', 'wet']);
@@ -8140,6 +8193,7 @@ function unpackWorld(kept) {
   if (!w.forager) w.forager = startForager(w);            // (kept before the forager: it starts afresh)
   const F = w.forager;
   if (F.hand === undefined) F.hand = '';                  // (kept before the hands)
+  if (!F.best) F.best = {};                               // (kept before the grades)
   if (F.rod > 0) {                                      // (kept when the rod was carried, not in a slot: into the satchel, or the basket)
     if (storeRoom(F, 'rod') > 0) storePut(F, 'rod', 1);
     else if (w.camp && w.camp.basket && storeRoom(w.camp.basket, 'rod') > 0) storePut(w.camp.basket, 'rod', 1);
@@ -9078,7 +9132,7 @@ const api = {
   bagCount, spend, stow, feedForager, feedHand, holdDish, dropHand, hungerOf, HUNGRY, TUMMY, fireSpot, layFire, feedFire, fireRoom, lightable, lightFire, fireHeat, fireWarmth, CAMP_R, CAMP_FLAT, inCamp, campLevel, campR, earnDeed, countCosy, DEED_EVERY, BASKET_SLOTS, basketSpot, makeBasket, campSpot, seatSpot, makeSeat, seatNear, SEAT_HALF, SEAT_FACES, seatFaceOf, SEAT_OUT, rackSpot, makeRack, makeLean, RACK_SLOTS, RACK_KEEP, underLean, dryPace, driesTo, curledUp, CURL_TICKS, moveBetween, moveInto, putAway,
   torchSpot, placeTorch, relightTorch, torchUnder, TORCH_BURN, TORCH_WET, TORCH_MAX, TORCH_GAP, scorchFade,
   storeCount, storeRoom, storePut, storeTake, tidyStore, takeOne, usesOf, usesLeft, wear, snapTool, mendTool, worldStores, storesAt, storesCount, storesRoom, storesTake, storesPut, STORE_NEAR,
-  cookTicks, cookReady, cookOn, cookTake, shapeVessel, makeVessel, potOn, handPot, potsOwed, copperPot, takePot, setPot, potOnFire, fillPot, blockSpot, makeBlock, blockName, BLOCK_NEAR, blockLay, blockChop, boardCount, takeBoard, boardBack, BOARD_MOST, POT_STEAM, POT_SIMMER, POT_ROLL, POT_LEAST, POT_SCOOP, kitOf, cookProgress, SKILLS, SKILL_NAMES, SKILL_TOP, skillNeed, skillLevel, skillProgress, perk, gainSkill, FIRE_STICK, FIRE_MOST, FIRE_LOW, FIRE_EMBERS, FIRE_NEAR, FIRE_REACH, FIRE_GAP, FIRE_WET, FIRE_WARM,
+  cookTicks, cookReady, cookOn, cookTake, stirPot, potGrade, stirsOf, STIR_WAIT, shapeVessel, makeVessel, potOn, handPot, potsOwed, copperPot, takePot, setPot, potOnFire, fillPot, blockSpot, makeBlock, blockName, BLOCK_NEAR, blockLay, blockChop, boardCount, takeBoard, boardBack, BOARD_MOST, POT_STEAM, POT_SIMMER, POT_ROLL, POT_LEAST, POT_SCOOP, kitOf, cookProgress, SKILLS, SKILL_NAMES, SKILL_TOP, skillNeed, skillLevel, skillProgress, perk, gainSkill, FIRE_STICK, FIRE_MOST, FIRE_LOW, FIRE_EMBERS, FIRE_NEAR, FIRE_REACH, FIRE_GAP, FIRE_WET, FIRE_WARM,
   get pace() { return foragerPace; }, set pace(v) { foragerPace = clamp(+v || 1, 0.1, 20); },
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;

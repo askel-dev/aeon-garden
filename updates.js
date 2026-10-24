@@ -19,6 +19,17 @@
 
 const UPDATES = [
   {
+    v: '0.13.0', date: '2026-10-24', title: 'Stirring the pot',
+    notes: [
+      'Soups and stews in the pot ask to be stirred while they cook: drag round in the pot, or hold Space.',
+      'How well you cook shows in the dish: rough, good or perfect, or a bit burnt if the pot boiled dry.',
+      'A perfect dish needs boiling water, everything cut on the board, and every stir.',
+      'A perfect dish fills and warms you a little more, and a rough one a little less.',
+      'The recipe book shows the best you have made each dish.',
+      'The game no longer freezes when the fire burns out while you are cooking at it.',
+    ],
+  },
+  {
     v: '0.12.4', date: '2026-10-23', title: 'Fixes',
     notes: [
       'On an iPhone home screen, the strip at the foot of the screen now takes the colour of the meadow just above it.',

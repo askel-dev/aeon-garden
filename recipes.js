@@ -761,7 +761,30 @@ const FESTIVAL_WHATS = ['fish', 'dishes'];   // (what a festival counts: supabas
 const RECIPE_KEYS = ['name', 'needs', 'at', 'vessel', 'fill', 'level', 'from', 'warm', 'known', 'time', 'icon', 'text', 'eats', 'crisp', 'bottle', 'festival'];
 const BUILD_KEYS = ['name', 'needs', 'where', 'after', 'makes', 'gone', 'text'];
 
-const recipeOf = name => RECIPES.find(r => r.name.toLowerCase() === String(name).toLowerCase());
+const recipeOf = name => { const plain = plainOf(String(name)).toLowerCase(); return RECIPES.find(r => r.name.toLowerCase() === plain); };
+
+// How well a dish out of the pot came out (sim.js potGrade, PLAN.md stage 12): its word in the name (before it, or after for
+// a burnt one), and how much more or less it fills and warms than the dish as it is. One painting a dish whatever its grade.
+// A graded dish is kept as its name, GRADE_MARK and the grade ('Watercress soup~perfect'), so a perfect and a rough one never
+// pile together; a good one (and every dish kept from before, or out of another vessel) is its name alone. rank: which is
+// better, for the book's best (sim.js f.best).
+const GRADES = {
+  burnt:   { rank: 0, after: ', a bit burnt', fill: 0.9, warm: 1 },
+  rough:   { rank: 1, word: 'Rough', fill: 0.8, warm: 0.8 },
+  good:    { rank: 2, fill: 1, warm: 1 },
+  perfect: { rank: 3, word: 'Perfect', fill: 1.25, warm: 1.25 },
+};
+const GRADE_MARK = '~';
+// A dish's name without its grade, and its grade ('good' with none).
+function plainOf(id) { const i = id.indexOf(GRADE_MARK); return i < 0 ? id : id.slice(0, i); }
+function gradeIn(id) { const i = String(id).indexOf(GRADE_MARK); return i < 0 || !GRADES[id.slice(i + 1)] ? 'good' : id.slice(i + 1); }
+// The dish named so, kept at this grade; and what it's called ('Perfect watercress soup', 'Watercress soup, a bit burnt').
+const graded = (name, grade) => (!GRADES[grade] || grade === 'good' ? name : name + GRADE_MARK + grade);
+function gradedName(name, grade) {
+  const G = GRADES[grade];
+  if (!G || grade === 'good') return name;
+  return G.after ? name + G.after : G.word + ' ' + name.charAt(0).toLowerCase() + name.slice(1);
+}
 const isTag = word => Object.values(INGREDIENTS).some(g => g.tags.includes(word));
 
 // Does one thing in the pot (an ingredient id, or a dish's name) answer a word in a recipe's needs?
@@ -769,7 +792,7 @@ function answers(thing, word) {
   if (thing === word) return true;
   const g = INGREDIENTS[thing];
   if (g) return g.tags.includes(word);
-  return String(thing).toLowerCase() === String(word).toLowerCase();
+  return plainOf(String(thing)).toLowerCase() === String(word).toLowerCase();   // (a dish, whatever its grade)
 }
 
 // Each thing in the pot answers one word of the needs and every word is answered (tried every way: a pot holds four
@@ -975,14 +998,17 @@ function checkDeeds() {
   return problems;
 }
 
-// What a thing in the satchel (an ingredient's id, or a dish's name) is as food: { name, fill, warm, raw, icon, dish }, raw
-// false for what can't be eaten as it is; null for what isn't known.
+// What a thing in the satchel (an ingredient's id, or a dish's name, graded or not) is as food: { name, fill, warm, warmth,
+// raw, icon, dish, grade }, raw false for what can't be eaten as it is, warmth how much a warm one warms (1 as a dish does,
+// more or less by its grade: GRADES); null for what isn't known.
 function foodOf(id) {
   const g = INGREDIENTS[id];
-  if (g) return { name: g.name, fill: g.fill, warm: false, raw: g.raw !== false && g.fill > 0, icon: g.icon, dish: false };
+  if (g) return { name: g.name, fill: g.fill, warm: false, warmth: 0, raw: g.raw !== false && g.fill > 0, icon: g.icon, dish: false, grade: '' };
   const r = id === MESS.name ? MESS : recipeOf(id);
   if (!r) return null;
-  return { name: r.name, fill: r === MESS ? MESS.fill : fillOf(r), warm: !!r.warm, raw: true, icon: r.icon || DISH_ICON, dish: true };
+  const grade = r === MESS ? '' : gradeIn(id), G = GRADES[grade] || GRADES.good;
+  return { name: gradedName(r.name, grade), fill: (r === MESS ? MESS.fill : fillOf(r)) * G.fill, warm: !!r.warm, warmth: r.warm ? G.warm : 0,
+    raw: true, icon: r.icon || DISH_ICON, dish: true, grade };
 }
 
 // How a thing in the satchel is eaten (game.js EAT_WAYS): { eats, crisp, liked }. A dish by its own eats or its vessel,
@@ -1025,7 +1051,7 @@ const takes = word => (INGREDIENTS[word] ? [word] : Object.keys(INGREDIENTS).fil
 function stackOf(id) { const i = INGREDIENTS[id]; return (i && i.stack) || 0; }
 function keepOf(id) { const i = INGREDIENTS[id]; return (i && i.keep) || 0; }
 function usesOf(id) { const i = INGREDIENTS[id]; return (i && i.uses) || 0; }
-const Recipes = { stackOf, keepOf, usesOf, PREP, prepOf, STATIONS, VESSELS, vesselOf, craftLevel, whereOf, INGREDIENTS, RECIPES, BUILDS, FISH, HAUL, TREASURES, knowSecrets, CRAFTS, DEEDS, CAMP_LEVELS, MESS, cook, fits, fillOf, timeOf, recipeOf, takes, foodOf, eatsOf, EAT_WAYS, thingsFor, answers, checkRecipes, checkDeeds };
+const Recipes = { stackOf, keepOf, usesOf, PREP, prepOf, STATIONS, VESSELS, vesselOf, craftLevel, whereOf, INGREDIENTS, RECIPES, BUILDS, FISH, HAUL, TREASURES, knowSecrets, CRAFTS, DEEDS, CAMP_LEVELS, MESS, cook, fits, fillOf, timeOf, recipeOf, GRADES, GRADE_MARK, plainOf, gradeIn, graded, gradedName, takes, foodOf, eatsOf, EAT_WAYS, thingsFor, answers, checkRecipes, checkDeeds };
 if (typeof module !== 'undefined') module.exports = Recipes;
 else {
   window.Recipes = Recipes;

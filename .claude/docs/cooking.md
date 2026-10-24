@@ -216,3 +216,22 @@ upright phone the scene's log is fatter (`CUT_TALL`) than the one on the grass, 
 Dragged onto the pot a thing still goes in whole. How many pieces a thing was cut into against `prepOf`'s cuts is the dish's
 `chopped` (`choppedOf`, sim.js `cookOn`), for step 4's grade. The satchel's head says "click to cut, drag into the pot" (`bagWord`).
 The chopping block build is `gone` (one already made becomes a cutting log).
+
+Stirring, and the grade (PLAN.md stage 12, step 4, 2026-10-24; the comments over game.js `STIR_TURN` and sim.js `potStirs`,
+`potGrade` have it all). A dish in the pot asks for a stir one to three times as it cooks (sim.js `stirsOf`, `potStirs`, in
+`potsTick`, only while it cooks), each for `STIR_WAIT` ticks; the pot keeps `asks`, `stirs`, `ask` and its `stirred` share.
+The spoon (drawCookView's) is still unless the hand takes it round: a drag in the pot's mouth on `kw.cv` (`roundPot`, the
+angle about the mouth's middle squashed to a circle; a press starts it within the mouth, wider for a finger) or Space held
+(`kw.keyStir`, `STIR_KEY`), both through `stirBy`: it swishes every `STIR_SWISH`, turns the broth (`kw.swirl`, coasting down
+when the hand stops; the things go round with it either way, `dir`) and the forager's arm (the `'cooking'` kneel only while
+the hand moved in `STIR_IDLE`), and while it asks, `STIR_TURN` meets it (sim.js `stirPot`). Asking: big bubbles welling at one
+side (hashed from `asks`), the rim breathing cream, sound.js `blup`, and #cook-timer's `.ct-stirs` dots with `.ct-how` ("Stir
+it now", and how till `firsts` has `stir:done`); met (`potstir`) a flash going out (`kw.metAt`) and `blup` met; missed
+(`potmiss`) a dark puff low over the broth (`kw.missAt`, `MISS_MS`, `messArt`: low because the card hides what rises) and
+`blup` caught. Another pot asking: its bar pulses (`drawCookBars`) and the blup is heard there. Out of the pot `cookDone`
+reads `potGrade` and `potMarks` before `cookTake` forgets them: the dish is kept graded (recipes.js `graded`; `GRADES`,
+`gradedName`, `plainOf`, `gradeIn`: a good one is its plain name, so every dish kept from before is good), into the hand or a
+store as that id, and recipes.js `recipeOf`, `foodOf` (the name, fill and `warmth` by grade), `answers` and game.js
+`DISH_IX`, `ITEM_ART`, `itemIx` all see the dish under its grade. The card names it with how each step went (`.ct-marks`,
+`GRADED_MS` longer), a perfect one gold (sound.js `dish` with `grade`, two more bells; `PERFECT_PRACTICE`); `f.best` keeps the
+best for the book (`bestChip`), and eating it says so ("Mm. Just right", "A bit smoky. Still good").

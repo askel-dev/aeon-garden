@@ -1309,6 +1309,7 @@ state), a few bubble sprites, the close-up's one blur as it starts. Time `render
 - **Open:**
   - The first soup: watercress (the stream gives the water and the cress) or nettle (more to chop: nettles, mushroom,
     greens).
+  - ~~Where the stir is, what a missed one costs, what a grade gives, which dishes~~: settled 2026-10-24 (step 4, above).
   - Mastery: steps going quicker after five good cooks, or every cook stays fully by hand?
   - The chopping block as a camp build, or chop on any flat stone, or in the hands?
   - Fish cleaning: a step on the block, or stays folded into Cook as stage 11 settled?
@@ -1367,6 +1368,35 @@ the one copy of the cutting, the lab and the game both use it. Checked with a CD
 (touch): cut, sweep to the screen's edge, lean out, Cook. Not done: the lab's second scene (the pot from above, stirring); what a cut is worth (the `chopped` mark is how many pieces
 against `prepOf`, to be the grade in step 4), friends seeing the board, the simmer and stir (step 4). To feel out: does fading
 out by itself when empty feel right, and the swipe speed (`SWIPE`) by finger.
+
+### As built: step 4, the stir and the grade (2026-10-24, uncommitted on main)
+Asked first, Axel's answers (2026-10-24): the stir happens at the pot in the meadow, no scene of its own; a stir missed while
+you're away counts (a perfect dish wants you by the fire, but missing stirs never makes it worse than good); a better grade
+gives the name, a little more or less fill and warmth, more practice when perfect, and the book's best; every pot dish gets
+it, watercress soup is the one to tune with.
+- **The asks.** A dish in the pot asks for a stir one to three times by how long it takes (sim.js `stirsOf`: 50 s or more at
+  1x three, 25 s two, else one), evenly through the cook (`potStirs` in `potsTick`, only while it cooks: the fire lit, the pot
+  simmering). Each waits `STIR_WAIT` (8 s at 1x, less in a short dish so they never overlap); met (`stirPot`) or missed
+  (events `potask`, `potstir`, `potmiss`). The pot's `asks`, `stirs` and `ask` are new fields in `potOf` (filled for kept
+  pots in `unpackWorld`, no `KEEP_VERSION` bump).
+- **The stir.** The spoon goes round only as the hand takes it: a drag round in the pot's mouth (the pot's canvas takes the
+  pointer), or Space held; once and a quarter round (`STIR_TURN`) while it asks meets it. Asking, big bubbles well up at one
+  side, the rim breathes cream, a "blup" (sound.js `blup`), and the card over the pot shows the stirs as dots (met gold,
+  missed smoky, the one now breathing) with "Stir it now" (and how, till a stir's been met once). Met: the rim flashes and two
+  bright notes. Missed: a dark puff over the broth and a short sizzle. Away from the fire the bar over the pot pulses and the
+  blup is heard where it is.
+- **The grade** (sim.js `potGrade`): burnt if it boiled dry; perfect in at a rolling boil, everything cut and every stir met;
+  rough when the boil and the board together come to less than one (cold and whole, or simmering and barely cut); else good.
+  The dish is kept graded (recipes.js `GRADES`: 'Watercress soup~perfect', a good one is its plain name), so a perfect and a
+  rough one never pile; one painting a dish. Named "Perfect watercress soup", "Rough …", "…, a bit burnt"; fills and warms
+  ×1.25 perfect, ×0.8 rough, ×0.9 fill burnt; a perfect one is 1.5 practice. As it comes out the card names it and how each
+  step went ("In at a boil · All cut · 2 of 3 stirs"), a perfect one in gold with two more bells. The book's page shows the
+  best (sim.js `f.best`).
+Checked in headless Chrome over CDP on a computer (mouse and Space) and an upright phone (touch): asks, met, missed, a good
+and a perfect watercress soup, both in the satchel apart, the book's best; headless, every grade from the marks, three years
+on three seeds, the round-trip. Not done: friends see none of it (the pot isn't sent yet); the board's cut is still the only
+way to "All cut" (a thing dropped in whole is whole). To feel out: is 8 s long enough to notice, is once and a quarter round
+right, and does a perfect soup feel worth the care.
 
 ## Stage 13: the legend (planned 2026-10-22, after stage 12)
 

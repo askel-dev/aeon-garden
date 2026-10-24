@@ -386,6 +386,7 @@ const RULES = {
   level:   { gap: 3,    always: true, lift: 1.6 }, // a skill up a level
   plop:    { gap: 0.05, always: true, lift: 2 },   // cooking: a thing into the pot's water (or lifted out),
   stir:    { gap: 0.4,  always: true, lift: 1.6 }, // the spoon going round,
+  blup:    { gap: 0.3,  always: true, lift: 1.8 }, // the pot asking for a stir, the stir met, or missed,
   simmer:  { gap: 1,    always: true, lift: 2 },   // a stretch of the pot bubbling (the lab's: the game's comes with the ambience, state.pot),
   dish:    { gap: 1,    always: true, lift: 2 },   // a dish done,
   mess:    { gap: 1,    always: true, lift: 2 },   // and a forager's mess,
@@ -1082,14 +1083,36 @@ const SOUNDS = {
     src.connect(f).connect(g).connect(o); src.start(t, rand(0, 3)); src.stop(t + len + 0.05);
     if (Math.random() < 0.6) { const at = t + rand(0.2, 0.6); partial(o, rand(560, 640), at, 0.05, 0.003, 0.06, 'triangle'); partial(o, rand(1500, 1700), at, 0.012, 0.002, 0.03); }
   },
+  // The pot and its stirs (game.js stirBy, PLAN.md stage 12), by what: it wants a stir, a big slow bubble welling up off the
+  // bottom and breaking, "blup", with a lower one under it (ask); stirred in time, the water settling and two bright notes up
+  // (met); not, a short sizzle of the bottom catching and one low note (caught).
+  blup(t, o0, { what = 'ask' }) {
+    const o = ac.createBiquadFilter(); o.type = 'lowpass'; o.frequency.value = 3000; o.Q.value = 0.5; o.connect(o0);
+    if (what === 'met') {
+      noise(o, t, 0.3, { from: 900, to: 400, q: 0.8, peak: 0.04, attack: 0.03, type: 'lowpass' });
+      kalimba(o, note(2, 1), t + 0.02, 0.3); kalimba(o, note(4, 1), t + 0.11, 0.34);
+      return;
+    }
+    if (what === 'caught') {
+      noise(o, t, 0.42, { from: 3800, to: 2600, q: 1.2, peak: 0.045, attack: 0.01 });   // the sizzle
+      noise(o, t, 0.3, { from: 700, to: 300, q: 0.7, peak: 0.05, attack: 0.02, type: 'lowpass' });
+      marimba(o, note(0, -1), t + 0.12, 0.3);
+      return;
+    }
+    bloop(o, t, rand(105, 120), 0.16, 0.16);
+    bloop(o, t + rand(0.14, 0.2), rand(150, 170), 0.11, 0.1);
+    noise(o, t + 0.1, 0.12, { from: 900, to: 500, q: 0.8, peak: 0.03, attack: 0.01, type: 'lowpass' });
+    waterDrop(o, t + 0.24, Math.floor(rand(3, 6)), 0.025);
+  },
   // A stretch of the pot simmering (sec seconds; v 0.3 a simmer, 1 a boil): what the ambience plays from state.pot, for the lab.
   simmer(t, o, { sec = 3, v = 1 }) {
     noise(o, t, sec, { from: 240, to: 300, q: 0.7, peak: 0.05 * v, attack: sec * 0.3, type: 'lowpass' });
     for (let at = t + rand(0, 0.1); at < t + sec; at += rand(0.05, 0.3) / v) bubble(o, at, v);
   },
   // A dish done: the steam whooshing up off it as it comes out of the pot, and a warm little run on the kalimba up into a
-  // chord over a low felt-piano note, a bell on top and a few sparkles.
-  dish(t, o) {
+  // chord over a low felt-piano note, a bell on top and a few sparkles; a perfect one (grade, sim.js potGrade) two bells more
+  // climbing over it.
+  dish(t, o, { grade = '' } = {}) {
     const chord = pick([CHORDS.D, CHORDS.DA, CHORDS.D]);
     noise(o, t, 0.6, { from: 300, to: 1400, q: 0.6, peak: 0.07, attack: 0.25, type: 'lowpass' });
     bloop(o, t, 200, 0.09, 0.1);
@@ -1097,6 +1120,7 @@ const SOUNDS = {
     [chord[0], chord[1], chord[2], chord[0] + 5].forEach((d, i) => kalimba(o, note(d, 1), t + 0.2 + i * 0.1, 0.34 - i * 0.03));
     bell(o, note(chord[2], 1), t + 0.62, 0.22);
     twinkle(t + 0.7, chord, 4, 0.9, 0.5);
+    if (grade === 'perfect') { bell(o, note(chord[0] + 7, 1), t + 0.86, 0.2); bell(o, note(chord[2] + 7, 1), t + 1.02, 0.22); }
   },
   // The recipe book opening: the cover lifting (a low soft thump and a creak of paper), then a few pages riffling over, each
   // a quick swish of band-passed noise a little higher and lighter than the last, and a faint note of the scale as it settles.
