@@ -6864,6 +6864,16 @@ function fillPot(w, n = POT_SCOOP) {
   P.heat *= was / P.water;
   return P.water;
 }
+// A pot on the ground the deep water has come over (set down in the shallows, then the water rose; or kept so) washes up
+// on the nearest dry ground, so it's never out of reach.
+function potAshore(w, P) {
+  for (let r = 0.5; r <= 12; r += 0.5) {
+    for (let k = 0; k < 16; k++) {
+      const a = k / 16 * Math.PI * 2, x = P.x + Math.cos(a) * r, y = P.y + Math.sin(a) * r;
+      if (dry(w, x, y)) { P.x = Math.round(x * 100) / 100 + 0.001; P.y = Math.round(y * 100) / 100 + 0.001; return; }
+    }
+  }
+}
 // Whether a dish cooking on fire i goes on cooking this tick: one in its pot only while it simmers.
 function potCooks(w, i) {
   for (const P of w.pots) if (P.fire === i && P.dish !== '') return P.heat >= POT_SIMMER;
@@ -6875,6 +6885,7 @@ function potsTick(w, n = POT_EVERY) {
   for (const P of w.pots) {
     const F = P.fire >= 0 ? w.fires[P.fire] : null;
     if (P.held === 0) { P.x = f.x; P.y = f.y; }
+    else if (!F && w.water[idx(P.x, P.y)] === DEEP && !w.frozen) potAshore(w, P);
     const goal = F ? Math.min(1, fireHeat(F) * 1.1) : 0;
     if (P.heat < goal) P.heat = Math.min(goal, P.heat + n * (P.copper ? COPPER_WARM : 1) / (POT_WARM * (0.33 + 0.67 * P.water)));
     else if (P.heat > goal) P.heat = Math.max(goal, P.heat - n / POT_COOL);

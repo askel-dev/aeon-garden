@@ -129,7 +129,7 @@ and tuned; the comments over game.js `POT_JOBS` and sim.js `POT_EVERY` have it a
 at a fire), and sits on that fire; from there it's carried in both hands (sim.js `f.hand` is `'pot'`, `takePot`; the carry pose
 as a dish's, the pot's painting by its water at `POT_HELD` a dish's size: `potLook`, `drawHeldDish`'s `big`). Lift in the
 cooking bar (`#cook-lift`, shown while the pot is on that fire with nothing cooking: `liftPot`), a tap on it where it stands
-(`potAt`, `useAt` kind `'pot'`, `goPot`), or a tap on a cold fire it sits on with nothing to do to the fire, picks it up.
+(`potAt`, `useAt` kind `'pot'`, `goPot`: from a dry spot beside it, else wading to it in the shallows, `wadeTo`; one the deep water came over washes up on the nearest dry ground, sim.js `potAshore`), or a tap on a cold fire it sits on with nothing to do to the fire, picks it up.
 Carrying it (`potTap`, first in `click`): a tap on water walks to the bank or into the shallows (`scoopFrom`) and fills it
 a scoop at a time (`fillFrame`: `SCOOPS` of `SCOOP_MS`, a plop and a slosh each, the placeholder for a glug; sim.js
 `fillPot`, `POT_SCOOP` a third), a tap on a fire sets it on (`goPotFire`, sim.js `potOnFire`; E too, through `clickFire`),

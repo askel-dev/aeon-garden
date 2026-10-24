@@ -9714,7 +9714,16 @@ function goPotFire(F) {
 function goPot(P) {
   const f = world.forager;
   if (f.hand) { say(f.hand === 'pot' ? 'You\'re carrying a pot' : 'Your hands are full', f.x, f.y - 1.6); return; }
-  goFire({ kind: 'potup', F: null, x: P.x, y: P.y, it: P });
+  goFire({ kind: 'potup', F: null, x: P.x, y: P.y, it: P, at: standAt(P.x, P.y, f.x) || wadeTo(P.x, P.y) });
+}
+// Where it stands to reach down to x, y in the shallows (no dry spot beside it): wading, on the way from where it is, or null.
+function wadeTo(x, y) {
+  const f = world.forager, dx = f.x - x, dy = f.y - y, d = Math.hypot(dx, dy) || 1;
+  for (const r of [STAND_OFF, 0.5, 0.25, 0]) {
+    const sx = x + dx / d * r, sy = y + dy / d * r;
+    if (S.walkable(world, sx, sy)) { standPt[0] = sx; standPt[1] = sy; return standPt; }
+  }
+  return null;
 }
 // The cooking bar's Lift: the pot off the fire being cooked at, into its hands, and up off its knees.
 function liftPot() {

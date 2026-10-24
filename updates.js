@@ -19,6 +19,12 @@
 
 const UPDATES = [
   {
+    v: '0.13.2', date: '2026-10-24', title: 'A pot in the water',
+    notes: [
+      'A pot set down in shallow water can be picked up again, and one the deep water covers washes up on the bank.',
+    ],
+  },
+  {
     v: '0.13.1', date: '2026-10-24', title: 'An easier first night',
     notes: [
       'Collapsing in the first storm no longer empties your satchel, and you wake warm beside the fire you laid.',
