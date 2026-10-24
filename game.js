@@ -24671,6 +24671,31 @@ function devHome() {
   f.x = f.goalX = x; f.y = f.goalY = y; f.path.length = 0; f.walking = f.running = false; f.speed = 0;
   keepLast();
 }
+// What there is to tap on screen, in dev, for tools/play.mjs: the things to pick, what lies dropped, the fires, a pot on
+// the ground, the camp's stores and the old stone, and the animals. Each { kind, name, n, why, x, y, sx, sy, d }: its name
+// and what it gives (or why not), where it is in the meadow and on screen (where a tap lands on it), and how far it is from
+// the forager in tiles, the nearest first.
+function devSeen() {
+  if (!DEV || !world) return [];
+  const F = world.forager, out = [];
+  const add = (kind, it, name, n, why, sx, sy) => {
+    if (sx < 0 || sy < 0 || sx > vw || sy > vh) return;
+    out.push({ kind, name, n, why, x: +it.x.toFixed(2), y: +it.y.toFixed(2), sx: Math.round(sx), sy: Math.round(sy), d: +Math.hypot(it.x - F.x, it.y - F.y).toFixed(1) });
+  };
+  for (let i = 0; i < picks.it.length; i++) {
+    const kind = picks.kind[i], it = picks.it[i], t = S.whatThere(world, kind, it), id = t.id, n = t.n, why = t.why, s = gatherSpot(kind, it);
+    add(kind, it, id, n, why, s.gx, s.gy);
+  }
+  for (const d of world.dropped) { const s = gatherSpot('dropped', d); add('dropped', d, d.kind, d.n, '', s.gx, s.gy); }
+  for (const f of world.fires) { const [name, why] = fireSaid(f), s = useSpot('fire', f); add('fire', f, name, 0, why, s.gx, s.gy); }
+  for (const P of world.pots) if (P.fire < 0 && P.held < 0) { const [x, y] = toScreen(P.x, P.y); add('pot', P, 'Clay pot', 0, '', x, y - potPx(cam.zoom) * 0.3); }
+  const B = myBasket(), Rk = nearestRack(F.x, F.y);
+  if (B) { const s = useSpot('basket', B); add('basket', B, 'Basket', 0, '', s.gx, s.gy); }
+  if (Rk) { const s = useSpot('rack', Rk); add('rack', Rk, 'Drying rack', 0, '', s.gx, s.gy); }
+  if (world.stone) { const s = useSpot('stone', world.stone); add('stone', world.stone, 'Old stone', 0, '', s.gx, s.gy); }
+  for (const c of world.creatures) if (c.alive && !c.hidden) { const [x, y] = screenOf(c); add('animal', c, c.species, 0, '', x, y); }
+  return out.sort((a, b) => a.d - b.d);
+}
 // One line on where the meadow stands, at the panel's head (and how much of a skip is still to run).
 function devShow() {
   const box = $('#dev-give');
@@ -24760,6 +24785,7 @@ if (DEV) setupDevGive();
 
 window.garden = { get world() { return world; }, ui, cam, angle, charge, get pace() { return S.pace; }, set pace(v) { S.pace = v; }, forager: fg, prints: pr, peers, satchel: () => renderSatchel(), wear: (n = 10) => DEV && rodWear(n), kit: { netFiring, firedUi, paint: paintVessel }, stone: { paint: paintOldStone, ui: stoneUi }, torch: { paint: paintTorch, flame: drawTorchFlame, arts: TORCH_ARTS }, camp: { fire: paintFire, basket: paintBasket, seat: paintSeat, rack: paintRack, lean: paintLean }, screen: (x, y) => [...toScreen(x, y)], click: (x, y) => click(x, y), cookView: kw,   // handy in the console
   give: (id, n) => devGive(id, n), fishNow: kind => devFishNow(kind), fishKind: (x, y) => fishKind(x, y), fishing: angle, landing, cosy: n => devCosy(n), raise: n => devRaise(n), skip: to => devSkip(to), weather: k => devWeather(k), dev: DEV,
+  S: DEV ? S : null, seen: () => devSeen(), well: () => devWell(), home: () => devHome(), get intro() { return intro.on; },   // (tools/play.mjs plays with these)
   perf,
   gov: { get rung() { return gov.rung; }, set rung(r) { gov.rung = clamp(r | 0, 0, gov.top); govApply(); }, get floor() { return gov.floor; }, get ema() { return perf.ren; } },
   get trees() { return { worker: !!treeWorker, workers: treeWorkers.length, art: treeArt, bytes: treeBytes, asked: treeAsked.size, busy: treeBusy }; } };

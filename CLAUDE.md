@@ -59,12 +59,13 @@ a meadow). On localhost (or with `?dev`) `~` opens a barebones dev panel that pu
 ingredient in the satchel, and the satchel carries 999 of a kind; `garden.give(id, n)` in the console
 does the same (`DEV`, game.js). Nothing of it runs on the site unless `?dev` is asked for.
 
-Checking visuals: you may use Google Chrome on this laptop (`/Applications/Google Chrome.app`)
-to look at the game yourself, headless or not. `--headless=new --screenshot` only captures the
-first frame; to see the game running (animals moving, camera moved), drive Chrome over the
-DevTools protocol (`--remote-debugging-port`) and use `Runtime.evaluate` / `Page.captureScreenshot`.
-Shortcuts for that: `window.garden` has `world`, `cam` (set `x`, `y`, `zoom`, `goal = null` to look somewhere),
-`ui` (`ui.speed = 0` pauses) and `pace` (`garden.pace = 2` walks and runs the forager twice as quick); the CSS
+Checking visuals and play: `tools/play.mjs` plays the game in a Chrome window of its own that Axel can watch
+(`--headless` for none), a command at a time: `start`, `seen`, `use stick`, `go water`, `shot`, `film`, `stop`. The
+`playtest` skill (`.claude/skills/playtest/SKILL.md`) says how, and what to look for. For what it doesn't cover, drive
+Google Chrome (`/Applications/Google Chrome.app`) over the DevTools protocol yourself (`--headless=new --screenshot`
+only captures the first frame). Shortcuts in the page: `window.garden` has `world`, `cam` (set `x`, `y`, `zoom`,
+`goal = null` to look somewhere), `ui` (`ui.speed = 0` pauses), `pace` (`garden.pace = 2` walks and runs the forager
+twice as quick), and in dev `S` (the sim) and `seen()` (what there is to tap); the CSS
 `body > *:not(#world, #ground) { visibility: hidden }` hides every panel.
 In a cloud session with no Chrome, Playwright is installed globally (`npm root -g`) with Chromium.
 You don't have to test everything: check what a change could plausibly break, and leave the rest.
